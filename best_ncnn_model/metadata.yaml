@@ -1,0 +1,20 @@
+description: Ultralytics best model trained on /usr/local/lib/python3.12/dist-packages/ultralytics/cfg/datasets/SKU-110K.yaml
+author: Ultralytics
+date: '2026-07-09T20:27:55.868924'
+version: 8.4.90
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+head: Detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: object
+args:
+  batch: 1
+  quantize: null
+channels: 3
+end2end: false
