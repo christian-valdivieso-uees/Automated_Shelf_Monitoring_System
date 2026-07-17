@@ -8,25 +8,9 @@ El archivo principal `inferencia.py` realiza la detección de objetos de forma c
 
 ## 🔧 Requisitos y Dependencias
 
-- **Hardware:** Raspberry Pi con un módulo de cámara oficial habilitado.
+- **Hardware:** Raspberry Pi 4 con un módulo de cámara oficial habilitado.
 - **Sistema Operativo:** Raspberry Pi OS (Bullseye o posterior, que incluya soporte para libcamera/picamera2).
 - **Python:** 3.8+
-
-### Librerías Necesarias
-
-Instala las dependencias de Python necesarias:
-
-```bash
-pip install ultralytics opencv-python
-```
-
-*Nota: La librería `picamera2` generalmente viene preinstalada en las versiones recientes de Raspberry Pi OS.*
-
-## 🚀 Ejecución
-
-```bash
-python src/inferencia.py
-```
 
 ## ⚙️ Cómo Funciona (`src/inferencia.py`)
 
@@ -51,7 +35,7 @@ sudo apt update
 Instala Picamera2 directamente en el entorno global del sistema de la Raspberry Pi, junto con libgl1-mesa-glx y libcamera-dev, que son librerías del sistema necesarias para que el procesamiento de imágenes y OpenCV funcionen sin errores de renderizado.
 
 ```bash
-sudo apt install -y python3-picamera2 libgl1-mesa-glx libcamera-dev
+sudo apt install -y python3-picamera2 libgl1 libcamera-dev
 ```
 
 Crea una carpeta llamada `venv` que contiene tu entorno virtual. El argumento vital aquí es --system-site-packages. Esto crea un "puente" que permite que este entorno aislado pueda acceder a las librerías instaladas en el sistema operativo (como el python3-picamera2 del paso anterior) sin tener que reinstalarlas dentro.
@@ -72,20 +56,20 @@ Instala PyTorch y Torchvision (requeridos por Ultralytics). Al añadir --index-u
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
 
+Instala OpenCV. El sufijo -headless es fundamental para ahorrar memoria: instala la librería sin los módulos de interfaz gráfica (como las funciones para abrir ventanas flotantes en el escritorio).
+
+```bash
+pip install opencv-python-headless pandas-stubs
+```
+
 Instala la librería ultralytics para gestionar tu modelo YOLO y el módulo ncnn, que es el motor de inferencia necesario para leer y ejecutar los pesos de tu modelo de forma fluida.
 
 ```bash
 pip install ultralytics ncnn
 ```
 
-Instala OpenCV. El sufijo -headless es fundamental para ahorrar memoria: instala la librería sin los módulos de interfaz gráfica (como las funciones para abrir ventanas flotantes en el escritorio).
-
-```bash
-pip install opencv-python-headless
-```
-
 Para ejecutar tu archivo, debes usar el comando de Python asegurándote de que el entorno virtual esté activo (tu terminal muestra (venv) al inicio de la línea), simplemente ejecuta:
 
 ```bash
-python3 inferencia.py
+python3 src/inferencia.py
 ```
