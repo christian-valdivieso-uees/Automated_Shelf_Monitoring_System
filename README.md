@@ -56,6 +56,14 @@ Instala PyTorch y Torchvision (requeridos por Ultralytics). Al añadir --index-u
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
 
+Instala las librerías necesarias para el procesamiento de imágenes y la gestión de datos.
+
+```bash
+pip install -r requirements.txt
+```
+
+O puedes seguir instalando las librerías individualmente:
+
 Instala OpenCV. El sufijo -headless es fundamental para ahorrar memoria: instala la librería sin los módulos de interfaz gráfica (como las funciones para abrir ventanas flotantes en el escritorio).
 
 ```bash
@@ -72,4 +80,10 @@ Para ejecutar tu archivo, debes usar el comando de Python asegurándote de que e
 
 ```bash
 python3 src/inferencia.py
+```
+
+Para ejecutar el backend, debes usar el comando de Python asegurándote de que el entorno virtual esté activo (tu terminal muestra (venv) al inicio de la línea), simplemente ejecuta:
+
+```bash
+python3 src/backend.py
 ```
