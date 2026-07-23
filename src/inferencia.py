@@ -4,6 +4,7 @@ import cv2
 import time
 import os
 import glob
+import requests
 
 def guardar_imagen_unica(imagen, carpeta="img_bboxes"):
     """
@@ -45,7 +46,18 @@ try:
         annotated = results[0].plot()
         # Llamar al método para guardar la imagen única en img_bboxes
         guardar_imagen_unica(annotated)
-        print(f"Detecciones: {len(results[0].boxes)}")
+        total_objects = len(results[0].boxes)
+        print(f"Detecciones: {total_objects}")
+        try:
+            # Enviar POST con total_objects
+            requests.post('http://localhost:5000/api/camera_info', json={'total_objects': total_objects})
+            
+            # Consultar all_records
+            records_response = requests.get('http://localhost:5000/api/all_records')
+            print(records_response.json())
+        except Exception as e:
+            print(f"Error al enviar o recibir datos: {e}")
+        
         time.sleep(5)
 
 except KeyboardInterrupt:
