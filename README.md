@@ -67,7 +67,7 @@ O puedes seguir instalando las librerías individualmente:
 Instala OpenCV. El sufijo -headless es fundamental para ahorrar memoria: instala la librería sin los módulos de interfaz gráfica (como las funciones para abrir ventanas flotantes en el escritorio).
 
 ```bash
-pip install opencv-python-headless pandas-stubs
+pip install opencv-python-headless pandas-stubs numpy
 ```
 
 Instala la librería ultralytics para gestionar tu modelo YOLO y el módulo ncnn, que es el motor de inferencia necesario para leer y ejecutar los pesos de tu modelo de forma fluida.
