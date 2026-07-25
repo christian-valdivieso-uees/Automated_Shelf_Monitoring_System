@@ -466,6 +466,7 @@ def _ensure_database_ready():
     db.init_schema(conn)
     conn.close()
 
+    init_db.create_alert_recipients()
 
 if __name__ == "__main__":
     _ensure_database_ready()

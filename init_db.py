@@ -102,6 +102,32 @@ def create_sample_roi():
     conn.close()
     print("Sample ROI zone 'Shelf - Level 1' created.")
 
+def create_alert_recipients():
+    """
+    Creates a sample alert recipient email address.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO alert_recipients
+            (email, active)
+        VALUES (?, ?)
+        """,
+        ("christian.valdivieso@uees.edu.ec", 1),
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO alert_recipients
+            (email, active)
+        VALUES (?, ?)
+        """,
+        ("dperugachi@onlycontrol.com", 1),
+    )
+    conn.commit()
+    conn.close()
 
 if __name__ == "__main__":
     create_schema()
