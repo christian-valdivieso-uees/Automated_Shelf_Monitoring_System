@@ -7,6 +7,7 @@
   <button class="tab-btn active" data-tab="general">General</button>
   <button class="tab-btn" data-tab="smtp">Notificaciones (SMTP)</button>
   <button class="tab-btn" data-tab="recipients">Destinatarios</button>
+  <button class="tab-btn" data-tab="users">Usuarios</button>
 </div>
 
 <div class="tab-panel active" id="tab-general">
@@ -57,6 +58,41 @@
     </div>
     <div id="recipientsList"></div>
     <div class="form-status" id="recipientsStatus"></div>
+  </div>
+</div>
+
+<div class="tab-panel" id="tab-users">
+  <div class="card" style="max-width: 520px; margin-bottom: 20px;">
+    <strong style="font-size:13px; display:block; margin-bottom:14px;">Cambiar mi contraseña</strong>
+    <div class="field">
+      <label for="currentPassword">Contraseña actual</label>
+      <input type="password" id="currentPassword">
+    </div>
+    <div class="field">
+      <label for="newPasswordSelf">Nueva contraseña</label>
+      <input type="password" id="newPasswordSelf" placeholder="Mínimo 8 caracteres">
+    </div>
+    <button class="btn btn-primary" id="changeOwnPasswordBtn">Cambiar contraseña</button>
+    <div class="form-status" id="ownPasswordStatus"></div>
+  </div>
+
+  <div class="card" style="max-width: 520px;">
+    <strong style="font-size:13px; display:block; margin-bottom:14px;">Crear nuevo usuario</strong>
+    <div class="field">
+      <label for="newUsername">Usuario</label>
+      <input type="text" id="newUsername">
+    </div>
+    <div class="field">
+      <label for="newUserPassword">Contraseña</label>
+      <input type="password" id="newUserPassword" placeholder="Mínimo 8 caracteres">
+    </div>
+    <button class="btn btn-primary" id="createUserBtn">Crear usuario</button>
+    <div class="form-status" id="createUserStatus"></div>
+
+    <div style="border-top: 1px solid var(--border-hairline); margin-top: 20px; padding-top: 16px;">
+      <strong style="font-size:13px; display:block; margin-bottom:10px;">Usuarios existentes</strong>
+      <div id="usersList"></div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -221,5 +257,105 @@
   loadGeneralParameters();
   loadSmtpConfig();
   loadRecipients();
+
+  // ---- Pestaña Usuarios ----
+
+  function renderUserRow(user) {
+    return `
+      <div class="recipient-row" style="align-items:flex-start; flex-direction:column; gap:8px;">
+        <div style="display:flex; justify-content:space-between; width:100%;">
+          <span>${user.username}</span>
+          <button class="btn btn-danger" style="font-size:11px; padding:4px 8px;" data-delete-user="${user.id}">Eliminar</button>
+        </div>
+        <div style="display:flex; gap:8px; width:100%;">
+          <input type="password" placeholder="Nueva contraseña" data-reset-input="${user.id}" style="flex:1; font-size:12px; padding:6px 8px;">
+          <button class="btn" style="font-size:11px; padding:4px 8px;" data-reset-user="${user.id}">Resetear</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadUsers() {
+    const resp = await fetch("/api/users");
+    if (resp.status === 401) { window.location.href = "/login"; return; }
+    const users = await resp.json();
+
+    const container = document.getElementById("usersList");
+    container.innerHTML = users.map(renderUserRow).join("");
+
+    container.querySelectorAll("[data-delete-user]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const resp = await fetch(`/api/users/${btn.dataset.deleteUser}`, { method: "DELETE" });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) { alert(data.error || "No se pudo eliminar el usuario."); return; }
+        await loadUsers();
+      });
+    });
+
+    container.querySelectorAll("[data-reset-user]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const input = container.querySelector(`[data-reset-input="${btn.dataset.resetUser}"]`);
+        const newPassword = input.value;
+        const resp = await fetch(`/api/users/${btn.dataset.resetUser}/password`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_password: newPassword }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) { alert(data.error || "No se pudo cambiar la contraseña."); return; }
+        input.value = "";
+        alert("Contraseña actualizada.");
+      });
+    });
+  }
+
+  document.getElementById("createUserBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("createUserStatus");
+    const username = document.getElementById("newUsername").value.trim();
+    const password = document.getElementById("newUserPassword").value;
+
+    const resp = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      statusEl.textContent = data.error || "No se pudo crear el usuario.";
+      statusEl.className = "form-status error";
+      return;
+    }
+    statusEl.textContent = `Usuario '${username}' creado.`;
+    statusEl.className = "form-status success";
+    document.getElementById("newUsername").value = "";
+    document.getElementById("newUserPassword").value = "";
+    await loadUsers();
+  });
+
+  document.getElementById("changeOwnPasswordBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("ownPasswordStatus");
+    const current_password = document.getElementById("currentPassword").value;
+    const new_password = document.getElementById("newPasswordSelf").value;
+
+    const resp = await fetch("/api/users/me/password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password, new_password }),
+    });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      statusEl.textContent = data.error || "No se pudo cambiar la contraseña.";
+      statusEl.className = "form-status error";
+      return;
+    }
+    statusEl.textContent = "Contraseña actualizada correctamente.";
+    statusEl.className = "form-status success";
+    document.getElementById("currentPassword").value = "";
+    document.getElementById("newPasswordSelf").value = "";
+  });
+
+  loadUsers();
 </script>
 {% endblock %}

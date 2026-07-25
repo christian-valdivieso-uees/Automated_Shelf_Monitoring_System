@@ -29,7 +29,7 @@ from flask_login import (
     LoginManager, UserMixin, login_user, logout_user,
     login_required, current_user,
 )
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import db
@@ -461,6 +461,110 @@ def remove_alert_recipient_route(email):
     finally:
         conn.close()
     return jsonify(emails)
+
+
+# ----------------------------------------------------------------------------
+# Gestión de usuarios (creación de cuentas y cambio de contraseña)
+# ----------------------------------------------------------------------------
+
+@app.route("/api/users", methods=["GET"])
+@login_required
+def list_users_route():
+    conn = db.get_connection()
+    try:
+        users = db.get_all_users(conn)
+    finally:
+        conn.close()
+    return jsonify(users)
+
+
+@app.route("/api/users", methods=["POST"])
+@login_required
+def create_user_route():
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "Usuario y contraseña son obligatorios"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "La contraseña debe tener al menos 8 caracteres"}), 400
+
+    conn = db.get_connection()
+    try:
+        new_id = db.create_user(conn, username, generate_password_hash(password))
+    except Exception:
+        return jsonify({"error": f"El usuario '{username}' ya existe"}), 400
+    finally:
+        conn.close()
+
+    return jsonify({"id": new_id, "username": username}), 201
+
+
+@app.route("/api/users/me/password", methods=["PUT"])
+@login_required
+def change_own_password_route():
+    """Cambio de la PROPIA contraseña: exige verificar la contraseña actual."""
+    data = request.get_json(force=True, silent=True) or {}
+    current_password = data.get("current_password") or ""
+    new_password = data.get("new_password") or ""
+
+    if len(new_password) < 8:
+        return jsonify({"error": "La nueva contraseña debe tener al menos 8 caracteres"}), 400
+
+    conn = db.get_connection()
+    try:
+        user_row = db.get_user_by_id(conn, int(current_user.id))
+        if user_row is None or not check_password_hash(user_row["password_hash"], current_password):
+            return jsonify({"error": "La contraseña actual es incorrecta"}), 401
+        db.update_user_password(conn, user_row["id"], generate_password_hash(new_password))
+    finally:
+        conn.close()
+
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/users/<int:user_id>/password", methods=["PUT"])
+@login_required
+def reset_user_password_route(user_id):
+    """
+    Restablece la contraseña de OTRO usuario sin pedir la contraseña
+    actual (acción administrativa) — hoy no hay roles diferenciados
+    (ver 'Trabajo Futuro' en el SRS), así que cualquier sesión autenticada
+    puede resetear cualquier cuenta, incluida la propia desde esta ruta.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    new_password = data.get("new_password") or ""
+
+    if len(new_password) < 8:
+        return jsonify({"error": "La nueva contraseña debe tener al menos 8 caracteres"}), 400
+
+    conn = db.get_connection()
+    try:
+        if db.get_user_by_id(conn, user_id) is None:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        db.update_user_password(conn, user_id, generate_password_hash(new_password))
+    finally:
+        conn.close()
+
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+@login_required
+def delete_user_route(user_id):
+    conn = db.get_connection()
+    try:
+        if db.count_users(conn) <= 1:
+            return jsonify({"error": "No se puede eliminar el único usuario del sistema"}), 400
+        if int(current_user.id) == user_id:
+            return jsonify({"error": "No puedes eliminar tu propia cuenta mientras estás conectado"}), 400
+        db.delete_user(conn, user_id)
+        users = db.get_all_users(conn)
+    finally:
+        conn.close()
+
+    return jsonify(users)
 
 
 # ----------------------------------------------------------------------------

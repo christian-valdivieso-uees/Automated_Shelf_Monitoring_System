@@ -121,6 +121,42 @@ def remove_alert_recipient(conn: sqlite3.Connection, email: str) -> None:
 # users
 # ----------------------------------------------------------------------------
 
+def create_user(conn: sqlite3.Connection, username: str, password_hash: str) -> int:
+    """Crea un nuevo usuario. `password_hash` ya debe venir hasheado
+    (werkzeug.security.generate_password_hash) — esta capa nunca hashea."""
+    cursor = conn.execute(
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        (username, password_hash),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_all_users(conn: sqlite3.Connection) -> list:
+    """Lista de usuarios SIN password_hash — nunca se expone al frontend."""
+    rows = conn.execute(
+        "SELECT id, username, created_at FROM users ORDER BY id"
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def count_users(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT COUNT(*) as c FROM users").fetchone()
+    return row["c"]
+
+
+def update_user_password(conn: sqlite3.Connection, user_id: int, password_hash: str) -> None:
+    conn.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
+    )
+    conn.commit()
+
+
+def delete_user(conn: sqlite3.Connection, user_id: int) -> None:
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+
+
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> Optional[dict]:
     """Usado por la ruta /login para verificar credenciales (RF-01)."""
     row = conn.execute(

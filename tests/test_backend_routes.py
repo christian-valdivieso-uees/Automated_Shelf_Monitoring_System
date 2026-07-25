@@ -276,6 +276,111 @@ class TestAlertRecipientsRoutes:
         assert resp.status_code in (302, 401)
 
 
+class TestUsersRoutes:
+    def test_listar_usuarios_nunca_expone_password_hash(self, client):
+        login(client)
+        resp = client.get("/api/users")
+        assert resp.status_code == 200
+        users = resp.get_json()
+        assert len(users) == 1  # solo el admin del fixture
+        assert "password_hash" not in users[0]
+
+    def test_crear_usuario_nuevo(self, client):
+        login(client)
+        resp = client.post("/api/users", json={"username": "operador", "password": "clave12345"})
+        assert resp.status_code == 201
+
+        users = client.get("/api/users").get_json()
+        assert any(u["username"] == "operador" for u in users)
+
+    def test_crear_usuario_con_username_duplicado_devuelve_400(self, client):
+        login(client)
+        client.post("/api/users", json={"username": "operador", "password": "clave12345"})
+        resp = client.post("/api/users", json={"username": "operador", "password": "otraclave123"})
+        assert resp.status_code == 400
+
+    def test_crear_usuario_con_password_corta_devuelve_400(self, client):
+        login(client)
+        resp = client.post("/api/users", json={"username": "operador2", "password": "123"})
+        assert resp.status_code == 400
+
+    def test_crear_usuario_sin_datos_devuelve_400(self, client):
+        login(client)
+        resp = client.post("/api/users", json={})
+        assert resp.status_code == 400
+
+    def test_cambiar_mi_password_con_password_actual_correcta(self, client):
+        login(client)
+        resp = client.put("/api/users/me/password", json={
+            "current_password": "admin123", "new_password": "nuevaClave123",
+        })
+        assert resp.status_code == 200
+
+        # Login viejo ya no funciona, el nuevo sí
+        resp_login_viejo = login(client, password="admin123")
+        assert resp_login_viejo.status_code == 401
+
+    def test_cambiar_mi_password_con_password_actual_incorrecta(self, client):
+        login(client)
+        resp = client.put("/api/users/me/password", json={
+            "current_password": "incorrecta", "new_password": "nuevaClave123",
+        })
+        assert resp.status_code == 401
+
+    def test_cambiar_mi_password_nueva_muy_corta_devuelve_400(self, client):
+        login(client)
+        resp = client.put("/api/users/me/password", json={
+            "current_password": "admin123", "new_password": "123",
+        })
+        assert resp.status_code == 400
+
+    def test_resetear_password_de_otro_usuario_sin_pedir_actual(self, client):
+        login(client)
+        creado = client.post("/api/users", json={"username": "operador", "password": "clave12345"}).get_json()
+
+        resp = client.put(f"/api/users/{creado['id']}/password", json={"new_password": "otraClave456"})
+        assert resp.status_code == 200
+
+    def test_resetear_password_usuario_inexistente_devuelve_404(self, client):
+        login(client)
+        resp = client.put("/api/users/9999/password", json={"new_password": "otraClave456"})
+        assert resp.status_code == 404
+
+    def test_eliminar_usuario(self, client):
+        login(client)
+        creado = client.post("/api/users", json={"username": "temporal", "password": "clave12345"}).get_json()
+
+        resp = client.delete(f"/api/users/{creado['id']}")
+        assert resp.status_code == 200
+        users = resp.get_json()
+        assert not any(u["id"] == creado["id"] for u in users)
+
+    def test_no_se_puede_eliminar_al_unico_usuario(self, client, backend):
+        login(client)
+        conn = backend.db.get_connection()
+        admin = backend.db.get_user_by_username(conn, "admin")
+        conn.close()
+
+        resp = client.delete(f"/api/users/{admin['id']}")
+        assert resp.status_code == 400
+
+    def test_no_se_puede_eliminar_la_propia_cuenta_conectada(self, client, backend):
+        login(client)
+        creado = client.post("/api/users", json={"username": "operador", "password": "clave12345"}).get_json()
+        conn = backend.db.get_connection()
+        admin = backend.db.get_user_by_username(conn, "admin")
+        conn.close()
+
+        # Con 2 usuarios ya existentes, "no eliminar el único" ya no aplica,
+        # pero sí debe bloquear eliminar la cuenta con la que se inició sesión.
+        resp = client.delete(f"/api/users/{admin['id']}")
+        assert resp.status_code == 400
+
+    def test_users_routes_sin_login_son_rechazadas(self, client):
+        assert client.get("/api/users").status_code in (302, 401)
+        assert client.post("/api/users", json={}).status_code in (302, 401)
+
+
 class TestRoiZonesRoutes:
     def test_crear_y_listar_zona(self, client):
         login(client)

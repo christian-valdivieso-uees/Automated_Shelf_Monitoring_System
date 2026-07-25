@@ -9,6 +9,7 @@ el archivo real en disco ni depender de rutas del Raspberry Pi.
 
 import sys
 import os
+import sqlite3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -103,6 +104,40 @@ class TestSmtpConfigYRecipients:
 
 
 class TestUsers:
+    def test_create_user_devuelve_id_valido(self, conn):
+        new_id = db.create_user(conn, "nuevo_admin", "hash_de_prueba")
+        assert isinstance(new_id, int)
+        assert new_id > 0
+
+    def test_create_user_username_duplicado_lanza_integrity_error(self, conn):
+        db.create_user(conn, "duplicado", "hash1")
+        with pytest.raises(sqlite3.IntegrityError):
+            db.create_user(conn, "duplicado", "hash2")
+
+    def test_get_all_users_nunca_incluye_password_hash(self, conn):
+        db.create_user(conn, "usuario1", "hash_secreto")
+        usuarios = db.get_all_users(conn)
+        assert len(usuarios) == 1
+        assert "password_hash" not in usuarios[0]
+        assert usuarios[0]["username"] == "usuario1"
+
+    def test_count_users(self, conn):
+        assert db.count_users(conn) == 0
+        db.create_user(conn, "u1", "h1")
+        db.create_user(conn, "u2", "h2")
+        assert db.count_users(conn) == 2
+
+    def test_update_user_password(self, conn):
+        user_id = db.create_user(conn, "usuario1", "hash_viejo")
+        db.update_user_password(conn, user_id, "hash_nuevo")
+        user = db.get_user_by_id(conn, user_id)
+        assert user["password_hash"] == "hash_nuevo"
+
+    def test_delete_user_elimina_la_fila(self, conn):
+        user_id = db.create_user(conn, "usuario1", "hash1")
+        db.delete_user(conn, user_id)
+        assert db.get_user_by_id(conn, user_id) is None
+
     def test_get_user_by_username_encuentra_al_admin_creado_en_el_seed(self, conn):
         # El schema.sql no crea usuarios (eso lo hace init_db.py con hash),
         # así que insertamos uno manualmente para la prueba.
