@@ -152,6 +152,35 @@ class TestSendEmail:
             with pytest.raises(Exception, match="Credenciales rechazadas"):
                 smtp_service.send_email(sample_config, ["destino@x.com"], "Asunto", "Cuerpo")
 
+    def test_puerto_465_usa_ssl_implicito_no_starttls(self, sample_config):
+        sample_config["port"] = 465
+        with patch("smtplib.SMTP_SSL") as mock_smtp_ssl_class, patch("smtplib.SMTP") as mock_smtp_class:
+            mock_server = MagicMock()
+            mock_smtp_ssl_class.return_value.__enter__.return_value = mock_server
+
+            smtp_service.send_email(sample_config, ["destino@x.com"], "Asunto", "Cuerpo")
+
+            mock_smtp_ssl_class.assert_called_once()
+            args, kwargs = mock_smtp_ssl_class.call_args
+            assert args[0] == sample_config["server"]
+            assert args[1] == 465
+            mock_server.login.assert_called_once_with(sample_config["username"], "password_real_de_prueba")
+            mock_server.send_message.assert_called_once()
+            # Jamás se usa smtplib.SMTP (STARTTLS) para el puerto 465
+            mock_smtp_class.assert_not_called()
+            mock_server.starttls.assert_not_called()
+
+    def test_puerto_587_sigue_usando_starttls_no_ssl_implicito(self, sample_config):
+        sample_config["port"] = 587
+        with patch("smtplib.SMTP") as mock_smtp_class, patch("smtplib.SMTP_SSL") as mock_smtp_ssl_class:
+            mock_server = MagicMock()
+            mock_smtp_class.return_value.__enter__.return_value = mock_server
+
+            smtp_service.send_email(sample_config, ["destino@x.com"], "Asunto", "Cuerpo")
+
+            mock_server.starttls.assert_called_once()
+            mock_smtp_ssl_class.assert_not_called()
+
 
 class TestSendAlertEmailInBackground:
     def test_envio_exitoso_marca_el_evento_como_notificado(self, sample_config):

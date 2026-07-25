@@ -18,6 +18,7 @@ que puede tardar 1-2 segundos.
 """
 
 import os
+import ssl
 import smtplib
 import threading
 from email.mime.multipart import MIMEMultipart
@@ -98,18 +99,10 @@ def build_alert_message(event: dict) -> tuple:
 # Envío
 # ----------------------------------------------------------------------------
 
-def send_email(smtp_config: dict, recipients: list, subject: str, body: str,
-               attachment_path: Optional[str] = None) -> None:
-    """
-    Envía un correo de forma SÍNCRONA. Lanza la excepción original de
-    smtplib/OSError si falla — el llamador decide cómo manejarla (ver
-    send_alert_email_in_background para la variante no bloqueante).
-    """
-    if not recipients:
-        raise ValueError("No hay destinatarios activos configurados (alert_recipients).")
-
+def _build_message(recipients: list, subject: str, body: str, from_addr: str,
+                    attachment_path: Optional[str] = None) -> MIMEMultipart:
     msg = MIMEMultipart()
-    msg["From"] = smtp_config["username"]
+    msg["From"] = from_addr
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
@@ -124,14 +117,43 @@ def send_email(smtp_config: dict, recipients: list, subject: str, body: str,
             img.add_header("Content-Disposition", "attachment",
                             filename=os.path.basename(attachment_path))
             msg.attach(img)
+    return msg
 
+
+def send_email(smtp_config: dict, recipients: list, subject: str, body: str,
+               attachment_path: Optional[str] = None) -> None:
+    """
+    Envía un correo de forma SÍNCRONA. Lanza la excepción original de
+    smtplib/OSError si falla — el llamador decide cómo manejarla (ver
+    send_alert_email_in_background para la variante no bloqueante).
+
+    Elige automáticamente el mecanismo de cifrado según el puerto:
+    - Puerto 465: SSL implícito (smtplib.SMTP_SSL) — la conexión ya nace
+      cifrada, no se llama starttls().
+    - Cualquier otro puerto (ej. 587) con use_tls=True: STARTTLS — se
+      conecta en texto plano y luego se sube a TLS con starttls().
+    Mezclar ambos mecanismos con el puerto equivocado es el error más común
+    al configurar SMTP (ej. usar starttls() contra el puerto 465 nunca
+    conecta, porque ese puerto espera TLS desde el primer byte).
+    """
+    if not recipients:
+        raise ValueError("No hay destinatarios activos configurados (alert_recipients).")
+
+    msg = _build_message(recipients, subject, body, smtp_config["username"], attachment_path)
     plain_password = decrypt_password(smtp_config["encrypted_password"])
+    port = int(smtp_config["port"])
 
-    with smtplib.SMTP(smtp_config["server"], smtp_config["port"], timeout=10) as server:
-        if smtp_config.get("use_tls"):
-            server.starttls()
-        server.login(smtp_config["username"], plain_password)
-        server.send_message(msg)
+    if port == 465:
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(smtp_config["server"], port, timeout=10, context=context) as server:
+            server.login(smtp_config["username"], plain_password)
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(smtp_config["server"], port, timeout=10) as server:
+            if smtp_config.get("use_tls"):
+                server.starttls()
+            server.login(smtp_config["username"], plain_password)
+            server.send_message(msg)
 
 
 def send_alert_email_in_background(event_id: int, smtp_config: dict, recipients: list,
