@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Monitoreo de Góndolas{% endblock %} — UEES</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="wordmark">UEES <span>·</span> Góndolas</div>
+        <span class="subtitle">Monitoreo automatizado</span>
+      </div>
+      <ul class="nav-list">
+        <li class="nav-item {{ 'active' if request.endpoint == 'live_view' else '' }}">
+          <a href="{{ url_for('live_view') }}">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 10l4.5-3v10L15 14M4 6h11v12H4z"/></svg>
+            Vista en Vivo
+          </a>
+        </li>
+        <li class="nav-item {{ 'active' if request.endpoint == 'roi_config_page' else '' }}">
+          <a href="{{ url_for('roi_config_page') }}">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 10h16M10 4v16"/></svg>
+            Configuración ROI
+          </a>
+        </li>
+        <li class="nav-item {{ 'active' if request.endpoint == 'history_page' else '' }}">
+          <a href="{{ url_for('history_page') }}">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v5l3 2"/><circle cx="12" cy="13" r="8"/><path d="M9 2h6"/></svg>
+            Historial
+          </a>
+        </li>
+      </ul>
+      <div class="sidebar-footer">
+        <button class="logout-btn" id="logoutBtn">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 17l5-5-5-5M20 12H9M12 3H5a2 2 0 00-2 2v14a2 2 0 002 2h7"/></svg>
+          Cerrar sesión
+        </button>
+      </div>
+    </aside>
+    <div class="main">
+      <div class="topbar">
+        <h1>{% block page_title %}{% endblock %}</h1>
+        <span class="clock" id="clock"></span>
+      </div>
+      <div class="content">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function actualizarReloj() {
+      const el = document.getElementById('clock');
+      if (el) el.textContent = new Date().toLocaleString('es-EC', { hour12: false });
+    }
+    actualizarReloj();
+    setInterval(actualizarReloj, 1000);
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/logout', { method: 'POST' });
+      window.location.href = '/login';
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Historial de Eventos{% endblock %}
+{% block page_title %}Historial de Eventos{% endblock %}
+
+{% block content %}
+<div class="filters-bar">
+  <div class="field" style="margin-bottom:0;">
+    <label for="filterRoi">Zona</label>
+    <select id="filterRoi"><option value="">Todas</option></select>
+  </div>
+  <div class="field" style="margin-bottom:0;">
+    <label for="filterType">Tipo de evento</label>
+    <select id="filterType">
+      <option value="">Todos</option>
+      <option value="out_of_stock">Sin stock</option>
+      <option value="in_stock">Recuperado</option>
+    </select>
+  </div>
+  <div class="field" style="margin-bottom:0;">
+    <label for="filterFrom">Desde</label>
+    <input type="date" id="filterFrom">
+  </div>
+  <div class="field" style="margin-bottom:0;">
+    <label for="filterTo">Hasta</label>
+    <input type="date" id="filterTo">
+  </div>
+  <button class="btn btn-primary" id="applyFiltersBtn">Buscar</button>
+</div>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Fecha / Hora</th>
+      <th>Zona</th>
+      <th>Transición</th>
+      <th>Imagen</th>
+    </tr>
+  </thead>
+  <tbody id="eventsBody"></tbody>
+</table>
+<div id="emptyState" style="display:none;" class="empty-state">
+  <div class="empty-title">No hay eventos con estos filtros</div>
+  <div>Ajusta el rango de fechas o la zona seleccionada.</div>
+</div>
+
+<div class="modal-overlay" id="imageModal">
+  <div class="modal-box">
+    <div class="modal-close"><button class="btn" id="closeModalBtn">Cerrar</button></div>
+    <img id="modalImg" src="" alt="Imagen del evento ampliada">
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const ESTADO_LABEL = { in_stock: 'Con stock', out_of_stock: 'Sin stock' };
+
+  async function loadZonesIntoFilter() {
+    const resp = await fetch('/api/roi_zones');
+    if (resp.status === 401) { window.location.href = '/login'; return; }
+    const zones = await resp.json();
+    const select = document.getElementById('filterRoi');
+    zones.forEach((z) => {
+      const opt = document.createElement('option');
+      opt.value = z.id;
+      opt.textContent = z.name;
+      select.appendChild(opt);
+    });
+  }
+
+  function renderRow(event) {
+    const fecha = new Date(event.timestamp.replace(' ', 'T')).toLocaleString('es-EC', { hour12: false });
+    const thumb = event.image_path
+      ? `<img class="thumb" src="/api/events/${event.id}/image" data-event-id="${event.id}">`
+      : '—';
+    return `
+      <tr data-event-id="${event.id}" data-has-image="${!!event.image_path}">
+        <td class="mono">${fecha}</td>
+        <td>${event.roi_name_snapshot}</td>
+        <td>
+          <span class="badge badge-${event.previous_state}">${ESTADO_LABEL[event.previous_state]}</span>
+          →
+          <span class="badge badge-${event.new_state}">${ESTADO_LABEL[event.new_state]}</span>
+        </td>
+        <td>${thumb}</td>
+      </tr>
+    `;
+  }
+
+  async function loadEvents() {
+    const params = new URLSearchParams();
+    const roi = document.getElementById('filterRoi').value;
+    const type = document.getElementById('filterType').value;
+    const from = document.getElementById('filterFrom').value;
+    const to = document.getElementById('filterTo').value;
+
+    if (roi) params.set('roi_id', roi);
+    if (type) params.set('event_type', type);
+    if (from) params.set('date_from', from + ' 00:00:00');
+    if (to) params.set('date_to', to + ' 23:59:59');
+
+    const resp = await fetch('/api/events?' + params.toString());
+    if (resp.status === 401) { window.location.href = '/login'; return; }
+    const events = await resp.json();
+
+    const tbody = document.getElementById('eventsBody');
+    const emptyState = document.getElementById('emptyState');
+
+    if (!events.length) {
+      tbody.innerHTML = '';
+      emptyState.style.display = 'block';
+      return;
+    }
+    emptyState.style.display = 'none';
+    tbody.innerHTML = events.map(renderRow).join('');
+
+    tbody.querySelectorAll('tr[data-has-image="true"]').forEach((row) => {
+      row.addEventListener('click', () => {
+        const eventId = row.dataset.eventId;
+        document.getElementById('modalImg').src = `/api/events/${eventId}/image`;
+        document.getElementById('imageModal').classList.add('open');
+      });
+    });
+  }
+
+  document.getElementById('closeModalBtn').addEventListener('click', () => {
+    document.getElementById('imageModal').classList.remove('open');
+  });
+  document.getElementById('imageModal').addEventListener('click', (event) => {
+    if (event.target.id === 'imageModal') event.currentTarget.classList.remove('open');
+  });
+
+  document.getElementById('applyFiltersBtn').addEventListener('click', loadEvents);
+
+  loadZonesIntoFilter();
+  loadEvents();
+</script>
+{% endblock %}

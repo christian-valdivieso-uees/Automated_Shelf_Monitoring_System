@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Configuración ROI{% endblock %}
+{% block page_title %}Configuración de Zonas (ROI){% endblock %}
+
+{% block content %}
+<div class="grid" style="grid-template-columns: 2fr 1fr; align-items: start;">
+  <div>
+    <div class="video-wrap" id="videoWrap">
+      <img src="{{ url_for('video_feed') }}" alt="Transmisión en vivo de la cámara" id="videoImg">
+      <canvas id="roiCanvas"></canvas>
+    </div>
+    <p style="color: var(--text-tertiary); font-size: 12px; margin-top: 10px;">
+      Haz clic en la esquina superior izquierda y luego en la esquina inferior derecha
+      del área que quieres delimitar. Puedes tener varias zonas independientes.
+    </p>
+    <div class="card" id="newZoneForm" style="display:none; margin-top: 12px;">
+      <div class="field">
+        <label for="zoneName">Nombre de la zona</label>
+        <input type="text" id="zoneName" placeholder="Ej. Góndola - Nivel 1">
+      </div>
+      <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+        <div class="field">
+          <label for="zoneLow">Umbral sin stock (≤)</label>
+          <input type="number" id="zoneLow" value="2" min="0">
+        </div>
+        <div class="field">
+          <label for="zoneHigh">Umbral con stock (≥)</label>
+          <input type="number" id="zoneHigh" value="4" min="1">
+        </div>
+        <div class="field">
+          <label for="zoneConfirm">Lecturas de confirmación</label>
+          <input type="number" id="zoneConfirm" value="3" min="1">
+        </div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-primary" id="saveZoneBtn">Guardar zona</button>
+        <button class="btn" id="cancelZoneBtn">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px;">
+      <strong style="font-size: 13px;">Zonas configuradas</strong>
+      <button class="btn btn-danger" id="clearAllBtn" style="font-size: 11px; padding: 5px 10px;">Limpiar todo</button>
+    </div>
+    <div id="zoneList"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const canvas = document.getElementById('roiCanvas');
+  const ctx = canvas.getContext('2d');
+  const videoImg = document.getElementById('videoImg');
+  const newZoneForm = document.getElementById('newZoneForm');
+
+  let clickStart = null;
+  let pendingRectPx = null; // {x1,y1,x2,y2} en píxeles del canvas
+  let zones = [];
+
+  function resizeCanvas() {
+    canvas.width = videoImg.clientWidth;
+    canvas.height = videoImg.clientHeight;
+    drawOverlay();
+  }
+  window.addEventListener('resize', resizeCanvas);
+  videoImg.addEventListener('load', resizeCanvas);
+  setTimeout(resizeCanvas, 300); // el stream MJPEG no siempre dispara 'load'
+
+  function drawOverlay() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Zonas ya guardadas, en rojo apagado
+    zones.forEach((z) => {
+      ctx.strokeStyle = 'rgba(214, 72, 63, 0.8)';
+      ctx.lineWidth = 2;
+      const x = z.x1 * canvas.width, y = z.y1 * canvas.height;
+      const w = (z.x2 - z.x1) * canvas.width, h = (z.y2 - z.y1) * canvas.height;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(214, 72, 63, 0.85)';
+      ctx.font = '11px "IBM Plex Mono", monospace';
+      ctx.fillText(z.name, x + 4, y + 14);
+    });
+
+    // Rectángulo en construcción, en el color de acento
+    if (pendingRectPx) {
+      ctx.strokeStyle = '#A31E42';
+      ctx.lineWidth = 2;
+      const { x1, y1, x2, y2 } = pendingRectPx;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }
+  }
+
+  canvas.addEventListener('click', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    if (!clickStart) {
+      clickStart = { x, y };
+      return;
+    }
+
+    pendingRectPx = {
+      x1: Math.min(clickStart.x, x), y1: Math.min(clickStart.y, y),
+      x2: Math.max(clickStart.x, x), y2: Math.max(clickStart.y, y),
+    };
+    clickStart = null;
+    drawOverlay();
+    newZoneForm.style.display = 'block';
+  });
+
+  document.getElementById('cancelZoneBtn').addEventListener('click', () => {
+    pendingRectPx = null;
+    newZoneForm.style.display = 'none';
+    drawOverlay();
+  });
+
+  document.getElementById('saveZoneBtn').addEventListener('click', async () => {
+    if (!pendingRectPx) return;
+    const name = document.getElementById('zoneName').value.trim();
+    if (!name) { alert('Ponle un nombre a la zona.'); return; }
+
+    const payload = {
+      name,
+      x1: pendingRectPx.x1 / canvas.width,
+      y1: pendingRectPx.y1 / canvas.height,
+      x2: pendingRectPx.x2 / canvas.width,
+      y2: pendingRectPx.y2 / canvas.height,
+      low_stock_threshold: parseInt(document.getElementById('zoneLow').value, 10),
+      restocked_threshold: parseInt(document.getElementById('zoneHigh').value, 10),
+      confirmation_readings: parseInt(document.getElementById('zoneConfirm').value, 10),
+    };
+
+    const resp = await fetch('/api/roi_zones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      alert(data.error || 'No se pudo guardar la zona.');
+      return;
+    }
+
+    pendingRectPx = null;
+    newZoneForm.style.display = 'none';
+    document.getElementById('zoneName').value = '';
+    await loadZones();
+  });
+
+  document.getElementById('clearAllBtn').addEventListener('click', async () => {
+    if (!zones.length) return;
+    if (!confirm(`¿Eliminar las ${zones.length} zonas configuradas? Esta acción no se puede deshacer.`)) return;
+    await Promise.all(zones.map((z) => fetch(`/api/roi_zones/${z.id}`, { method: 'DELETE' })));
+    await loadZones();
+  });
+
+  function renderZoneListItem(zone) {
+    return `
+      <div class="card" style="margin-bottom: 12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <strong style="font-size:13px;">${zone.name}</strong>
+          <button class="btn btn-danger" style="font-size:11px; padding:4px 8px;" data-delete="${zone.id}">Eliminar</button>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="field" style="margin-bottom:0;">
+            <label>Sin stock (≤)</label>
+            <input type="number" data-field="low_stock_threshold" data-id="${zone.id}" value="${zone.low_stock_threshold}">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label>Con stock (≥)</label>
+            <input type="number" data-field="restocked_threshold" data-id="${zone.id}" value="${zone.restocked_threshold}">
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadZones() {
+    const resp = await fetch('/api/roi_zones');
+    if (resp.status === 401) { window.location.href = '/login'; return; }
+    zones = await resp.json();
+    drawOverlay();
+
+    const listEl = document.getElementById('zoneList');
+    listEl.innerHTML = zones.length
+      ? zones.map(renderZoneListItem).join('')
+      : `<div class="empty-state"><div class="empty-title">Sin zonas todavía</div>Dibuja la primera sobre el video.</div>`;
+
+    listEl.querySelectorAll('[data-delete]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await fetch(`/api/roi_zones/${btn.dataset.delete}`, { method: 'DELETE' });
+        await loadZones();
+      });
+    });
+
+    listEl.querySelectorAll('input[data-field]').forEach((input) => {
+      input.addEventListener('change', async () => {
+        await fetch(`/api/roi_zones/${input.dataset.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [input.dataset.field]: parseInt(input.value, 10) }),
+        });
+      });
+    });
+  }
+
+  loadZones();
+</script>
+{% endblock %}

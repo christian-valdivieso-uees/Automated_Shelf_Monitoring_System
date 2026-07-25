@@ -1,21 +1,29 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Django stuff:
-*.log
-
-# Environments
-.env
-.venv
-env/
+# Entorno virtual y dependencias
 venv/
-ENV/
-env.bak/
-venv.bak/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Project specific
-runs/
-.vscode/
+# Base de datos real y datos generados en runtime — NUNCA se suben:
+# contienen hashes de contraseñas reales, historial de eventos, e imágenes
+# de la góndola física capturadas durante pruebas del equipo.
+data/*.db
+data/*.db-journal
+data/event_images/
+
+# Claves de cifrado y secretos — NUNCA se suben (ver ADR-07 en el SAD).
+.smtp_key
+.env
+
+# Modelo entrenado — se distribuye aparte (ver sección "Modelo" del README),
+# no se versiona en git por tamaño y porque cambia entre entrenamientos.
+models/
+
+# Sistema operativo / editor
 .DS_Store
+.vscode/
+*.swp

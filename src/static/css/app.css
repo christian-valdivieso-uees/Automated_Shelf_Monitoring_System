@@ -1,0 +1,600 @@
+/* ============================================================================
+   Sistema de diseño — Monitoreo Automatizado de Góndolas
+   Estética: terminal de inventario / appliance industrial, no dashboard
+   genérico. El motivo repetido ("etiqueta de anaquel" con LED de estado)
+   referencia literalmente las etiquetas de precio que el sistema vigila.
+   ============================================================================ */
+
+:root {
+  /* Color */
+  --bg-app: #14171c;
+  --bg-panel: #1c2027;
+  --bg-panel-alt: #242933;
+  --bg-panel-hover: #2a3039;
+  --border-hairline: #2e333d;
+  --border-hairline-bright: #3a4150;
+
+  --accent-maroon: #7a1532;
+  --accent-maroon-bright: #a31e42;
+  --accent-maroon-dim: rgba(122, 21, 50, 0.18);
+
+  --status-in-stock: #2e9e6b;
+  --status-in-stock-dim: rgba(46, 158, 107, 0.16);
+  --status-out-of-stock: #d6483f;
+  --status-out-of-stock-dim: rgba(214, 72, 63, 0.16);
+
+  --text-primary: #ece9e2;
+  --text-secondary: #9b9c9c;
+  --text-tertiary: #6b6d72;
+
+  /* Type */
+  --font-ui: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Layout */
+  --sidebar-width: 224px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ---------------------------------------------------------------------------
+   App Shell: sidebar + main
+   --------------------------------------------------------------------------- */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+
+.sidebar-brand {
+  padding: 0 20px 20px 20px;
+  border-bottom: 1px solid var(--border-hairline);
+  margin-bottom: 12px;
+}
+
+.sidebar-brand .wordmark {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.sidebar-brand .wordmark span {
+  color: var(--accent-maroon-bright);
+}
+
+.sidebar-brand .subtitle {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.03em;
+}
+
+.nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+}
+
+.nav-item a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-left: 2px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.nav-item a:hover {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active a {
+  color: var(--text-primary);
+  border-left-color: var(--accent-maroon-bright);
+  background: var(--accent-maroon-dim);
+}
+
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.sidebar-footer {
+  padding: 12px 20px 0 20px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.logout-btn:hover {
+  color: var(--status-out-of-stock);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.topbar h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.topbar .clock {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.content {
+  flex: 1;
+  padding: 28px;
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Componente de firma: Shelf Tag (tarjeta de estado de zona)
+   --------------------------------------------------------------------------- */
+
+.shelf-tag {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.shelf-tag::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--status-in-stock);
+}
+
+.shelf-tag.state-out_of_stock::before {
+  background: var(--status-out-of-stock);
+}
+
+.shelf-tag .tag-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.shelf-tag .tag-count {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.shelf-tag .tag-count .unit {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.led-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.led-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-in-stock);
+  box-shadow: 0 0 6px var(--status-in-stock);
+}
+
+.state-out_of_stock .led-dot {
+  background: var(--status-out-of-stock);
+  box-shadow: 0 0 6px var(--status-out-of-stock);
+  animation: pulse-led 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-led {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ---------------------------------------------------------------------------
+   Componentes genéricos
+   --------------------------------------------------------------------------- */
+
+.card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.grid-cols-auto {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.btn {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline-bright);
+  background: var(--bg-panel-alt);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover {
+  background: var(--bg-panel-hover);
+}
+
+.btn-primary {
+  background: var(--accent-maroon);
+  border-color: var(--accent-maroon);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--accent-maroon-bright);
+  border-color: var(--accent-maroon-bright);
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: var(--status-out-of-stock);
+  color: var(--status-out-of-stock);
+}
+
+.btn-danger:hover {
+  background: var(--status-out-of-stock-dim);
+}
+
+.btn:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent-maroon-bright);
+  outline-offset: 2px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.field label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.field input, .field select {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border-hairline-bright);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--text-primary);
+}
+
+.field input:focus, .field select:focus {
+  outline: none;
+  border-color: var(--accent-maroon-bright);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: 100px;
+}
+
+.badge-in_stock {
+  color: var(--status-in-stock);
+  background: var(--status-in-stock-dim);
+}
+
+.badge-out_of_stock {
+  color: var(--status-out-of-stock);
+  background: var(--status-out-of-stock-dim);
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-primary);
+}
+
+.data-table tr:hover td {
+  background: var(--bg-panel-alt);
+  cursor: pointer;
+}
+
+.data-table .mono {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.thumb {
+  width: 48px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline-bright);
+}
+
+.filters-bar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-tertiary);
+}
+
+.empty-state .empty-title {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+/* Modal (visor de imagen ampliada) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 11, 13, 0.82);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-overlay.open {
+  display: flex;
+}
+
+.modal-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline-bright);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.modal-box img {
+  max-width: 100%;
+  max-height: 70vh;
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.modal-close {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   Video / ROI canvas
+   --------------------------------------------------------------------------- */
+
+.video-wrap {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-hairline-bright);
+  line-height: 0;
+}
+
+.video-wrap img, .video-wrap canvas {
+  width: 100%;
+  display: block;
+}
+
+.video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  min-height: 280px;
+}
+
+.video-wrap canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+}
+
+/* ---------------------------------------------------------------------------
+   Login
+   --------------------------------------------------------------------------- */
+
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-app);
+  background-image: radial-gradient(circle at 20% 20%, rgba(122, 21, 50, 0.12), transparent 40%);
+}
+
+.login-card {
+  width: 340px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 32px 28px;
+}
+
+.login-card .brand-line {
+  width: 32px;
+  height: 3px;
+  background: var(--accent-maroon-bright);
+  margin-bottom: 16px;
+}
+
+.login-card h1 {
+  font-size: 18px;
+  margin: 0 0 4px 0;
+}
+
+.login-card .subtitle {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 24px;
+}
+
+.login-error {
+  font-size: 12px;
+  color: var(--status-out-of-stock);
+  margin-bottom: 12px;
+  min-height: 16px;
+}
+
+.login-links {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -6px;
+  margin-bottom: 18px;
+}
+
+.login-links a {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.login-links a:hover {
+  color: var(--text-secondary);
+}
+
+.login-card .btn-primary {
+  width: 100%;
+  padding: 10px;
+}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Vista en Vivo{% endblock %}
+{% block page_title %}Vista en Vivo{% endblock %}
+
+{% block content %}
+<div class="grid" style="grid-template-columns: 2fr 1fr; align-items: start;">
+  <div class="video-wrap" id="videoWrap">
+    <div class="video-placeholder" id="videoPlaceholder">Esperando señal de la cámara…</div>
+    <img src="{{ url_for('video_feed') }}" alt="Transmisión en vivo de la cámara" id="videoImg">
+  </div>
+
+  <div>
+    <div class="grid" id="zoneCards" style="grid-template-columns: 1fr;">
+      <div class="empty-state">
+        <div class="empty-title">Cargando zonas…</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const ESTADO_LABEL = { in_stock: 'Con stock', out_of_stock: 'Sin stock' };
+
+  function renderZoneCard(zone) {
+    const state = zone.current_state || 'in_stock';
+    const count = zone.latest_count;
+    const countDisplay = (count !== null && count !== undefined)
+      ? `${count}<span class="unit">botellas</span>`
+      : `<span style="font-size:15px; color: var(--text-tertiary); font-weight:400;">Sin lecturas aún</span>`;
+    return `
+      <div class="shelf-tag state-${state}">
+        <span class="tag-name">${zone.name}</span>
+        <div class="tag-count">${countDisplay}</div>
+        <div class="led-row">
+          <span class="led-dot"></span>
+          ${ESTADO_LABEL[state] || state}
+        </div>
+      </div>
+    `;
+  }
+
+  async function refreshZones() {
+    const container = document.getElementById('zoneCards');
+    try {
+      const resp = await fetch('/api/roi_zones');
+      if (resp.status === 401) { window.location.href = '/login'; return; }
+      const zones = await resp.json();
+
+      if (!zones.length) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-title">Todavía no hay zonas configuradas</div>
+            <div>Ve a Configuración ROI para crear la primera.</div>
+          </div>`;
+        return;
+      }
+      container.innerHTML = zones.map(renderZoneCard).join('');
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state">No se pudo conectar con el sistema.</div>`;
+    }
+  }
+
+  refreshZones();
+  setInterval(refreshZones, 2000);
+
+  // El placeholder se oculta en cuanto el <img> del stream MJPEG recibe
+  // datos reales por primera vez (evento 'load' del navegador).
+  document.getElementById('videoImg').addEventListener('load', () => {
+    document.getElementById('videoPlaceholder').style.display = 'none';
+  });
+</script>
+{% endblock %}
