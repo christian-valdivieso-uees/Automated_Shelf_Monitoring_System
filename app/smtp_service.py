@@ -75,24 +75,80 @@ def decrypt_password(encrypted_password: str) -> str:
 # ----------------------------------------------------------------------------
 
 _ESTADO_LEGIBLE = {"in_stock": "con stock", "out_of_stock": "sin stock"}
+_BADGE_STYLE = {
+    "in_stock": "background:#E1F5EE;color:#085041;",
+    "out_of_stock": "background:#FCEBEB;color:#791F1F;",
+}
+
+
+def _badge_html(state: str) -> str:
+    style = _BADGE_STYLE.get(state, "background:#F1EFE8;color:#444441;")
+    label = _ESTADO_LEGIBLE.get(state, state).upper()
+    return (
+        f'<td style="{style}font-size:12px;font-weight:bold;'
+        f'padding:6px 14px;border-radius:100px;">{label}</td>'
+    )
 
 
 def build_alert_message(event: dict) -> tuple:
     """
-    Construye asunto y cuerpo del correo a partir de una fila de
-    stock_events. Devuelve (subject, body).
+    Construye asunto, cuerpo en texto plano y cuerpo en HTML a partir de
+    una fila de stock_events. Devuelve (subject, text_body, html_body).
+
+    El texto plano se mantiene como respaldo (multipart/alternative): los
+    clientes de correo que no rendericen HTML, o que el usuario configure
+    para mostrar solo texto plano, siguen recibiendo la información completa.
     """
     previous = _ESTADO_LEGIBLE.get(event["previous_state"], event["previous_state"])
     new = _ESTADO_LEGIBLE.get(event["new_state"], event["new_state"])
+    avg = event.get("avg_total_objects")
+    timestamp = event.get("timestamp")
+    zona = event["roi_name_snapshot"]
 
-    subject = f"Alerta de stock: {event['roi_name_snapshot']} ahora está {new}"
-    body = (
-        f"Zona: {event['roi_name_snapshot']}\n"
+    subject = f"Alerta de stock: {zona} ahora está {new}"
+
+    text_body = (
+        f"Zona: {zona}\n"
         f"Cambio de estado: {previous} -> {new}\n"
-        f"Promedio de conteo que confirmó el cambio: {event.get('avg_total_objects')}\n"
-        f"Momento del evento: {event.get('timestamp')}\n"
+        f"Promedio de conteo que confirmó el cambio: {avg}\n"
+        f"Momento del evento: {timestamp}\n"
     )
-    return subject, body
+
+    html_body = f"""\
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,Helvetica,sans-serif;">
+<tr><td align="center">
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e2df;border-radius:8px;overflow:hidden;">
+<tr><td style="background:#7A1532;padding:16px 24px;">
+<span style="color:#ffffff;font-size:15px;font-weight:bold;">SAMS &middot; Alerta de Stock</span>
+</td></tr>
+<tr><td style="padding:24px 24px 8px 24px;">
+<div style="font-size:11px;color:#999999;text-transform:uppercase;letter-spacing:0.04em;">Zona</div>
+<div style="font-size:20px;font-weight:bold;color:#222222;margin-top:2px;">{zona}</div>
+</td></tr>
+<tr><td style="padding:14px 24px 20px 24px;">
+<table cellpadding="0" cellspacing="0"><tr>
+{_badge_html(event["previous_state"])}
+<td style="color:#aaaaaa;font-size:14px;padding:0 10px;">&rarr;</td>
+{_badge_html(event["new_state"])}
+</tr></table>
+</td></tr>
+<tr><td style="padding:0 24px 20px 24px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#444444;">
+<tr><td style="padding:8px 0;color:#888888;border-top:1px solid #eeeeee;">Promedio de conteo</td>
+<td style="padding:8px 0;text-align:right;font-family:monospace;border-top:1px solid #eeeeee;">{avg}</td></tr>
+<tr><td style="padding:8px 0;color:#888888;border-top:1px solid #eeeeee;">Fecha y hora</td>
+<td style="padding:8px 0;text-align:right;font-family:monospace;border-top:1px solid #eeeeee;">{timestamp}</td></tr>
+</table>
+</td></tr>
+<tr><td style="background:#f7f7f5;padding:12px 24px;font-size:11px;color:#999999;">
+Sistema de Monitoreo Automatizado de G&oacute;ndolas &mdash; UEES &middot; imagen de respaldo adjunta
+</td></tr>
+</table>
+</td></tr>
+</table>
+"""
+
+    return subject, text_body, html_body
 
 
 # ----------------------------------------------------------------------------
@@ -100,12 +156,23 @@ def build_alert_message(event: dict) -> tuple:
 # ----------------------------------------------------------------------------
 
 def _build_message(recipients: list, subject: str, body: str, from_addr: str,
-                    attachment_path: Optional[str] = None) -> MIMEMultipart:
-    msg = MIMEMultipart()
+                    attachment_path: Optional[str] = None,
+                    html_body: Optional[str] = None) -> MIMEMultipart:
+    msg = MIMEMultipart("mixed")
     msg["From"] = from_addr
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
+
+    if html_body:
+        # multipart/alternative: el cliente de correo elige la versión que
+        # sabe renderizar. El texto plano SIEMPRE va primero — es el
+        # respaldo que se muestra si el cliente no soporta HTML.
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(body, "plain"))
+        alt.attach(MIMEText(html_body, "html"))
+        msg.attach(alt)
+    else:
+        msg.attach(MIMEText(body, "plain"))
 
     if attachment_path and os.path.exists(attachment_path):
         with open(attachment_path, "rb") as f:
@@ -121,11 +188,16 @@ def _build_message(recipients: list, subject: str, body: str, from_addr: str,
 
 
 def send_email(smtp_config: dict, recipients: list, subject: str, body: str,
-               attachment_path: Optional[str] = None) -> None:
+               attachment_path: Optional[str] = None,
+               html_body: Optional[str] = None) -> None:
     """
     Envía un correo de forma SÍNCRONA. Lanza la excepción original de
     smtplib/OSError si falla — el llamador decide cómo manejarla (ver
     send_alert_email_in_background para la variante no bloqueante).
+
+    Si se pasa `html_body`, el correo se arma como multipart/alternative
+    (texto plano + HTML) — el cliente de correo elige cuál mostrar. Si se
+    omite, el correo es solo texto plano (ej. send_test_email).
 
     Elige automáticamente el mecanismo de cifrado según el puerto:
     - Puerto 465: SSL implícito (smtplib.SMTP_SSL) — la conexión ya nace
@@ -139,7 +211,8 @@ def send_email(smtp_config: dict, recipients: list, subject: str, body: str,
     if not recipients:
         raise ValueError("No hay destinatarios activos configurados (alert_recipients).")
 
-    msg = _build_message(recipients, subject, body, smtp_config["username"], attachment_path)
+    msg = _build_message(recipients, subject, body, smtp_config["username"],
+                         attachment_path, html_body)
     plain_password = decrypt_password(smtp_config["encrypted_password"])
     port = int(smtp_config["port"])
 
@@ -159,6 +232,7 @@ def send_email(smtp_config: dict, recipients: list, subject: str, body: str,
 def send_alert_email_in_background(event_id: int, smtp_config: dict, recipients: list,
                                     subject: str, body: str,
                                     attachment_path: Optional[str] = None,
+                                    html_body: Optional[str] = None,
                                     on_error: Optional[Callable[[Exception], None]] = None,
                                     db_module=db) -> threading.Thread:
     """
@@ -176,7 +250,7 @@ def send_alert_email_in_background(event_id: int, smtp_config: dict, recipients:
     """
     def _worker():
         try:
-            send_email(smtp_config, recipients, subject, body, attachment_path)
+            send_email(smtp_config, recipients, subject, body, attachment_path, html_body)
         except Exception as exc:
             if on_error is not None:
                 on_error(exc)

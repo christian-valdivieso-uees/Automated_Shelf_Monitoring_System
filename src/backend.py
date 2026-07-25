@@ -393,7 +393,7 @@ def _dispatch_alert_email(conn, event_id: int, roi_row: dict, transition,
         "avg_total_objects": avg_count,
         "timestamp": datetime.now().isoformat(sep=" ", timespec="seconds"),
     }
-    subject, body = smtp_service.build_alert_message(event)
+    subject, text_body, html_body = smtp_service.build_alert_message(event)
     full_image_path = os.path.join(PROJECT_ROOT, image_path) if image_path else None
 
     smtp_service.send_alert_email_in_background(
@@ -401,7 +401,8 @@ def _dispatch_alert_email(conn, event_id: int, roi_row: dict, transition,
         smtp_config=smtp_config,
         recipients=recipients,
         subject=subject,
-        body=body,
+        body=text_body,
+        html_body=html_body,
         attachment_path=full_image_path,
         on_error=lambda exc: print(f"[SMTP ERROR] Evento {event_id}: {exc}"),
     )
@@ -466,7 +467,6 @@ def _ensure_database_ready():
     db.init_schema(conn)
     conn.close()
 
-    init_db.create_alert_recipients()
 
 if __name__ == "__main__":
     _ensure_database_ready()

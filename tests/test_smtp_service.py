@@ -88,18 +88,26 @@ class TestCifrado:
 
 class TestBuildAlertMessage:
     def test_asunto_y_cuerpo_incluyen_los_datos_del_evento(self, sample_event):
-        subject, body = smtp_service.build_alert_message(sample_event)
+        subject, text_body, html_body = smtp_service.build_alert_message(sample_event)
         assert "Góndola Test" in subject
         assert "sin stock" in subject
-        assert "con stock -> sin stock" in body
-        assert "1.3" in body
+        assert "con stock -> sin stock" in text_body
+        assert "1.3" in text_body
 
     def test_traduce_estados_a_texto_legible(self, sample_event):
         sample_event["previous_state"] = "out_of_stock"
         sample_event["new_state"] = "in_stock"
-        subject, body = smtp_service.build_alert_message(sample_event)
+        subject, text_body, html_body = smtp_service.build_alert_message(sample_event)
         assert "con stock" in subject
-        assert "sin stock -> con stock" in body
+        assert "sin stock -> con stock" in text_body
+
+    def test_html_body_incluye_zona_y_datos_clave(self, sample_event):
+        subject, text_body, html_body = smtp_service.build_alert_message(sample_event)
+        assert "Góndola Test" in html_body
+        assert "1.3" in html_body
+        assert "SIN STOCK" in html_body
+        assert "CON STOCK" in html_body
+        assert "<table" in html_body
 
 
 class TestSendEmail:
@@ -142,6 +150,51 @@ class TestSendEmail:
                                      attachment_path=str(imagen))
             # No lanza excepción y sí llega a enviar
             mock_server.send_message.assert_called_once()
+
+    def test_con_html_body_arma_multipart_alternative(self, sample_config):
+        with patch("smtplib.SMTP") as mock_smtp_class:
+            mock_server = MagicMock()
+            mock_smtp_class.return_value.__enter__.return_value = mock_server
+
+            smtp_service.send_email(
+                sample_config, ["destino@x.com"], "Asunto", "Cuerpo texto plano",
+                html_body="<p>Cuerpo HTML</p>",
+            )
+
+            sent_msg = mock_server.send_message.call_args[0][0]
+            cuerpo_completo = sent_msg.as_string()
+            assert "multipart/alternative" in cuerpo_completo
+            assert "Cuerpo texto plano" in cuerpo_completo
+            assert "Cuerpo HTML" in cuerpo_completo
+
+    def test_sin_html_body_envia_solo_texto_plano(self, sample_config):
+        with patch("smtplib.SMTP") as mock_smtp_class:
+            mock_server = MagicMock()
+            mock_smtp_class.return_value.__enter__.return_value = mock_server
+
+            smtp_service.send_email(sample_config, ["destino@x.com"], "Asunto", "Solo texto")
+
+            sent_msg = mock_server.send_message.call_args[0][0]
+            assert "multipart/alternative" not in sent_msg.as_string()
+
+    def test_html_body_y_adjunto_conviven_en_el_mismo_correo(self, sample_config, tmp_path):
+        imagen = tmp_path / "evento.jpg"
+        imagen.write_bytes(b"contenido_falso_de_imagen")
+
+        with patch("smtplib.SMTP") as mock_smtp_class:
+            mock_server = MagicMock()
+            mock_smtp_class.return_value.__enter__.return_value = mock_server
+
+            smtp_service.send_email(
+                sample_config, ["destino@x.com"], "Asunto", "Texto plano",
+                attachment_path=str(imagen), html_body="<p>HTML</p>",
+            )
+
+            sent_msg = mock_server.send_message.call_args[0][0]
+            cuerpo_completo = sent_msg.as_string()
+            assert "multipart/alternative" in cuerpo_completo
+            assert "multipart/mixed" in cuerpo_completo
+            assert "evento.jpg" in cuerpo_completo
 
     def test_error_de_login_se_propaga_al_llamador(self, sample_config):
         with patch("smtplib.SMTP") as mock_smtp_class:
