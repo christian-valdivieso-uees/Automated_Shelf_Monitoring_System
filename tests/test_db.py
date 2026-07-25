@@ -352,6 +352,19 @@ class TestGeneralParameters:
         valor = db.get_general_parameter(conn, "image_retention_days", cast=int)
         assert valor == 30
 
+    def test_get_all_general_parameters_devuelve_los_seeds(self, conn):
+        todos = db.get_all_general_parameters(conn)
+        claves = [p["key"] for p in todos]
+        assert "image_retention_days" in claves
+        assert "reading_average_window" in claves
+        assert "default_confirmation_readings" in claves
+
+    def test_get_all_general_parameters_refleja_actualizaciones(self, conn):
+        db.set_general_parameter(conn, "image_retention_days", 60)
+        todos = db.get_all_general_parameters(conn)
+        param = next(p for p in todos if p["key"] == "image_retention_days")
+        assert param["value"] == "60"
+
     def test_parametro_inexistente_devuelve_default(self, conn):
         valor = db.get_general_parameter(conn, "no_existe", default=42, cast=int)
         assert valor == 42

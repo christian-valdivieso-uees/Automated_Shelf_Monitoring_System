@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Configuración{% endblock %}
+{% block page_title %}Configuración{% endblock %}
+
+{% block content %}
+<div class="tabs">
+  <button class="tab-btn active" data-tab="general">General</button>
+  <button class="tab-btn" data-tab="smtp">Notificaciones (SMTP)</button>
+  <button class="tab-btn" data-tab="recipients">Destinatarios</button>
+</div>
+
+<div class="tab-panel active" id="tab-general">
+  <div class="card" style="max-width: 520px;">
+    <div id="paramsList"></div>
+  </div>
+</div>
+
+<div class="tab-panel" id="tab-smtp">
+  <div class="card" style="max-width: 520px;">
+    <div class="field">
+      <label for="smtpServer">Servidor SMTP</label>
+      <input type="text" id="smtpServer" placeholder="smtp.ejemplo.com">
+    </div>
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+      <div class="field">
+        <label for="smtpPort">Puerto</label>
+        <input type="number" id="smtpPort" placeholder="587">
+      </div>
+      <div class="field">
+        <label for="smtpUsername">Usuario</label>
+        <input type="text" id="smtpUsername" placeholder="alertas@ejemplo.com">
+      </div>
+    </div>
+    <div class="field">
+      <label for="smtpPassword">Contraseña</label>
+      <input type="password" id="smtpPassword" placeholder="Dejar vacío para no cambiarla">
+    </div>
+    <button class="btn btn-primary" id="saveSmtpBtn">Guardar configuración</button>
+    <div class="form-status" id="smtpSaveStatus"></div>
+
+    <div style="border-top: 1px solid var(--border-hairline); margin-top: 20px; padding-top: 16px;">
+      <div class="field">
+        <label for="testEmailTo">Correo de destino para prueba</label>
+        <input type="text" id="testEmailTo" placeholder="tu_correo@ejemplo.com">
+      </div>
+      <button class="btn" id="testSmtpBtn">Probar conexión</button>
+      <div class="form-status" id="smtpTestStatus"></div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-panel" id="tab-recipients">
+  <div class="card" style="max-width: 520px;">
+    <div style="display:flex; gap:10px; margin-bottom: 16px;">
+      <input type="text" id="newRecipientEmail" placeholder="correo@ejemplo.com" style="flex:1;">
+      <button class="btn btn-primary" id="addRecipientBtn">Agregar</button>
+    </div>
+    <div id="recipientsList"></div>
+    <div class="form-status" id="recipientsStatus"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    });
+  });
+
+  const DESCRIPCIONES_AMIGABLES = {
+    image_retention_days: "Días de retención de imágenes de eventos",
+    reading_average_window: "Cantidad de lecturas para el promedio móvil",
+    default_confirmation_readings: "Lecturas de confirmación por defecto en zonas nuevas",
+  };
+
+  async function loadGeneralParameters() {
+    const resp = await fetch("/api/general_parameters");
+    if (resp.status === 401) { window.location.href = "/login"; return; }
+    const params = await resp.json();
+
+    const container = document.getElementById("paramsList");
+    container.innerHTML = params.map((p) => `
+      <div class="field">
+        <label>${DESCRIPCIONES_AMIGABLES[p.key] || p.description || p.key}</label>
+        <input type="text" data-key="${p.key}" value="${p.value}">
+      </div>
+    `).join("");
+
+    container.querySelectorAll("input[data-key]").forEach((input) => {
+      input.addEventListener("change", async () => {
+        await fetch(`/api/general_parameters/${input.dataset.key}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value: input.value }),
+        });
+      });
+    });
+  }
+
+  async function loadSmtpConfig() {
+    const resp = await fetch("/api/smtp_config");
+    if (resp.status === 401) { window.location.href = "/login"; return; }
+    const config = await resp.json();
+    if (!config) return;
+    document.getElementById("smtpServer").value = config.server || "";
+    document.getElementById("smtpPort").value = config.port || "";
+    document.getElementById("smtpUsername").value = config.username || "";
+  }
+
+  document.getElementById("saveSmtpBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("smtpSaveStatus");
+    statusEl.textContent = "";
+    statusEl.className = "form-status";
+
+    const payload = {
+      server: document.getElementById("smtpServer").value.trim(),
+      port: parseInt(document.getElementById("smtpPort").value, 10),
+      username: document.getElementById("smtpUsername").value.trim(),
+      password: document.getElementById("smtpPassword").value,
+    };
+
+    const resp = await fetch("/api/smtp_config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      statusEl.textContent = data.error || "No se pudo guardar la configuración.";
+      statusEl.className = "form-status error";
+      return;
+    }
+    statusEl.textContent = "Configuración guardada correctamente.";
+    statusEl.className = "form-status success";
+    document.getElementById("smtpPassword").value = "";
+  });
+
+  document.getElementById("testSmtpBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("smtpTestStatus");
+    const destino = document.getElementById("testEmailTo").value.trim();
+    if (!destino) {
+      statusEl.textContent = "Ingresa un correo de destino.";
+      statusEl.className = "form-status error";
+      return;
+    }
+
+    statusEl.textContent = "Enviando…";
+    statusEl.className = "form-status";
+
+    const resp = await fetch("/api/smtp_config/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ test_recipient: destino }),
+    });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      statusEl.textContent = data.error || "No se pudo enviar el correo de prueba.";
+      statusEl.className = "form-status error";
+      return;
+    }
+    statusEl.textContent = `Correo de prueba enviado a ${destino}.`;
+    statusEl.className = "form-status success";
+  });
+
+  function renderRecipientRow(email) {
+    return `
+      <div class="recipient-row">
+        <span>${email}</span>
+        <button class="btn btn-danger" style="font-size:11px; padding:4px 8px;" data-remove="${email}">Eliminar</button>
+      </div>
+    `;
+  }
+
+  async function loadRecipients() {
+    const resp = await fetch("/api/alert_recipients");
+    if (resp.status === 401) { window.location.href = "/login"; return; }
+    const emails = await resp.json();
+
+    const container = document.getElementById("recipientsList");
+    container.innerHTML = emails.length
+      ? emails.map(renderRecipientRow).join("")
+      : `<div class="empty-state"><div class="empty-title">Sin destinatarios todavía</div>Agrega el primero arriba.</div>`;
+
+    container.querySelectorAll("[data-remove]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/api/alert_recipients/${encodeURIComponent(btn.dataset.remove)}`, { method: "DELETE" });
+        await loadRecipients();
+      });
+    });
+  }
+
+  document.getElementById("addRecipientBtn").addEventListener("click", async () => {
+    const input = document.getElementById("newRecipientEmail");
+    const statusEl = document.getElementById("recipientsStatus");
+    const email = input.value.trim();
+    if (!email) return;
+
+    const resp = await fetch("/api/alert_recipients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!resp.ok) {
+      statusEl.textContent = "No se pudo agregar el destinatario.";
+      statusEl.className = "form-status error";
+      return;
+    }
+    statusEl.textContent = "";
+    input.value = "";
+    await loadRecipients();
+  });
+
+  loadGeneralParameters();
+  loadSmtpConfig();
+  loadRecipients();
+</script>
+{% endblock %}

@@ -148,6 +148,13 @@ def history_page():
     return render_template("history.html")
 
 
+@app.route("/settings")
+@login_required
+def settings_page():
+    """RF-17 a RF-21: página de configuración (General, SMTP, Destinatarios)."""
+    return render_template("settings.html")
+
+
 @app.route("/logout", methods=["POST"])
 @login_required
 def logout():
@@ -305,6 +312,155 @@ def get_event_image(event_id):
         return jsonify({"error": "Archivo de imagen no existe en disco"}), 404
 
     return send_file(full_path, mimetype="image/jpeg")
+
+
+# ----------------------------------------------------------------------------
+# RF-18: Configuración General (parámetros clave-valor)
+# ----------------------------------------------------------------------------
+
+@app.route("/api/general_parameters", methods=["GET"])
+@login_required
+def list_general_parameters():
+    conn = db.get_connection()
+    try:
+        params = db.get_all_general_parameters(conn)
+    finally:
+        conn.close()
+    return jsonify(params)
+
+
+@app.route("/api/general_parameters/<key>", methods=["PUT"])
+@login_required
+def update_general_parameter_route(key):
+    data = request.get_json(force=True, silent=True) or {}
+    if "value" not in data:
+        return jsonify({"error": "Falta el campo 'value'"}), 400
+
+    conn = db.get_connection()
+    try:
+        db.set_general_parameter(conn, key, data["value"])
+    finally:
+        conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ----------------------------------------------------------------------------
+# RF-19, RF-20: Configuración SMTP
+# ----------------------------------------------------------------------------
+
+def _smtp_config_public(config: dict) -> dict:
+    """Nunca se envía encrypted_password al cliente, ni cifrada."""
+    if config is None:
+        return None
+    return {k: v for k, v in config.items() if k != "encrypted_password"}
+
+
+@app.route("/api/smtp_config", methods=["GET"])
+@login_required
+def get_smtp_config_route():
+    conn = db.get_connection()
+    try:
+        config = db.get_active_smtp_config(conn)
+    finally:
+        conn.close()
+    return jsonify(_smtp_config_public(config))
+
+
+@app.route("/api/smtp_config", methods=["POST"])
+@login_required
+def save_smtp_config_route():
+    data = request.get_json(force=True, silent=True) or {}
+    required = ["server", "port", "username", "password"]
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return jsonify({"error": f"Campos faltantes: {missing}"}), 400
+
+    try:
+        encrypted = smtp_service.encrypt_password(data["password"])
+    except smtp_service.SmtpEncryptionKeyMissing as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    use_tls = int(data["port"]) != 465  # 465 = SSL implícito, no STARTTLS
+
+    conn = db.get_connection()
+    try:
+        db.save_smtp_config(
+            conn, server=data["server"], port=int(data["port"]),
+            username=data["username"], encrypted_password=encrypted, use_tls=use_tls,
+        )
+    finally:
+        conn.close()
+    return jsonify({"status": "ok"}), 201
+
+
+@app.route("/api/smtp_config/test", methods=["POST"])
+@login_required
+def test_smtp_config_route():
+    """RF-20: botón 'Probar conexión' — envío SÍNCRONO, el usuario espera el resultado."""
+    data = request.get_json(force=True, silent=True) or {}
+    test_recipient = data.get("test_recipient")
+    if not test_recipient:
+        return jsonify({"error": "Falta el correo de destino para la prueba"}), 400
+
+    conn = db.get_connection()
+    try:
+        config = db.get_active_smtp_config(conn)
+    finally:
+        conn.close()
+
+    if config is None:
+        return jsonify({"error": "Primero guarda una configuración SMTP"}), 400
+
+    try:
+        smtp_service.send_test_email(config, test_recipient)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    return jsonify({"status": "ok"})
+
+
+# ----------------------------------------------------------------------------
+# RF-21: Destinatarios de alertas
+# ----------------------------------------------------------------------------
+
+@app.route("/api/alert_recipients", methods=["GET"])
+@login_required
+def list_alert_recipients_route():
+    conn = db.get_connection()
+    try:
+        emails = db.get_active_alert_recipient_emails(conn)
+    finally:
+        conn.close()
+    return jsonify(emails)
+
+
+@app.route("/api/alert_recipients", methods=["POST"])
+@login_required
+def add_alert_recipient_route():
+    data = request.get_json(force=True, silent=True) or {}
+    email = (data.get("email") or "").strip()
+    if not email:
+        return jsonify({"error": "Falta el correo"}), 400
+
+    conn = db.get_connection()
+    try:
+        db.add_alert_recipient(conn, email)
+        emails = db.get_active_alert_recipient_emails(conn)
+    finally:
+        conn.close()
+    return jsonify(emails), 201
+
+
+@app.route("/api/alert_recipients/<path:email>", methods=["DELETE"])
+@login_required
+def remove_alert_recipient_route(email):
+    conn = db.get_connection()
+    try:
+        db.remove_alert_recipient(conn, email)
+        emails = db.get_active_alert_recipient_emails(conn)
+    finally:
+        conn.close()
+    return jsonify(emails)
 
 
 # ----------------------------------------------------------------------------

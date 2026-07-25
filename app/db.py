@@ -340,6 +340,14 @@ def get_stock_events(conn: sqlite3.Connection, roi_id: Optional[int] = None,
 # general_parameters
 # ----------------------------------------------------------------------------
 
+def get_all_general_parameters(conn: sqlite3.Connection) -> list:
+    """RF-18: lista completa de parámetros para la pantalla de Configuración General."""
+    rows = conn.execute(
+        "SELECT key, value, description, updated_at FROM general_parameters ORDER BY key"
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_general_parameter(conn: sqlite3.Connection, key: str, default=None, cast=str):
     row = conn.execute(
         "SELECT value FROM general_parameters WHERE key = ?", (key,)

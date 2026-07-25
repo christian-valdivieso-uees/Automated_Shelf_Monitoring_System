@@ -139,6 +139,143 @@ class TestPaginasHtml:
         assert resp.status_code == 302
 
 
+class TestSettingsPage:
+    def test_settings_page_renderiza_tras_login(self, client):
+        login(client)
+        resp = client.get("/settings")
+        assert resp.status_code == 200
+        assert b"Configuraci" in resp.data
+
+    def test_settings_page_sin_login_redirige(self, client):
+        resp = client.get("/settings")
+        assert resp.status_code in (302, 401)
+
+
+class TestGeneralParametersRoutes:
+    def test_listar_parametros_generales(self, client):
+        login(client)
+        resp = client.get("/api/general_parameters")
+        assert resp.status_code == 200
+        claves = [p["key"] for p in resp.get_json()]
+        assert "image_retention_days" in claves
+
+    def test_actualizar_parametro(self, client):
+        login(client)
+        resp = client.put("/api/general_parameters/image_retention_days",
+                           json={"value": "45"})
+        assert resp.status_code == 200
+
+        params = client.get("/api/general_parameters").get_json()
+        actualizado = next(p for p in params if p["key"] == "image_retention_days")
+        assert actualizado["value"] == "45"
+
+    def test_actualizar_parametro_sin_value_devuelve_400(self, client):
+        login(client)
+        resp = client.put("/api/general_parameters/image_retention_days", json={})
+        assert resp.status_code == 400
+
+    def test_general_parameters_sin_login_es_rechazado(self, client):
+        resp = client.get("/api/general_parameters")
+        assert resp.status_code in (302, 401)
+
+
+class TestSmtpConfigRoutes:
+    def test_get_smtp_config_sin_configuracion_devuelve_null(self, client):
+        login(client)
+        resp = client.get("/api/smtp_config")
+        assert resp.status_code == 200
+        assert resp.get_json() is None
+
+    def test_guardar_smtp_config_requiere_env_var(self, client, monkeypatch):
+        monkeypatch.delenv("SMTP_ENCRYPTION_KEY", raising=False)
+        login(client)
+        resp = client.post("/api/smtp_config", json={
+            "server": "smtp.ejemplo.com", "port": 587,
+            "username": "alertas@ejemplo.com", "password": "secreto123",
+        })
+        assert resp.status_code == 500
+
+    def test_guardar_y_leer_smtp_config_nunca_expone_password(self, client, monkeypatch):
+        from cryptography.fernet import Fernet
+        monkeypatch.setenv("SMTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        login(client)
+
+        resp = client.post("/api/smtp_config", json={
+            "server": "smtp.ejemplo.com", "port": 587,
+            "username": "alertas@ejemplo.com", "password": "secreto123",
+        })
+        assert resp.status_code == 201
+
+        resp_get = client.get("/api/smtp_config")
+        config = resp_get.get_json()
+        assert config["server"] == "smtp.ejemplo.com"
+        assert "encrypted_password" not in config
+        assert "password" not in config
+
+    def test_guardar_smtp_config_campos_faltantes_devuelve_400(self, client):
+        login(client)
+        resp = client.post("/api/smtp_config", json={"server": "smtp.ejemplo.com"})
+        assert resp.status_code == 400
+
+    def test_probar_conexion_sin_configuracion_devuelve_400(self, client):
+        login(client)
+        resp = client.post("/api/smtp_config/test", json={"test_recipient": "x@x.com"})
+        assert resp.status_code == 400
+
+    def test_probar_conexion_sin_destinatario_devuelve_400(self, client):
+        login(client)
+        resp = client.post("/api/smtp_config/test", json={})
+        assert resp.status_code == 400
+
+    def test_probar_conexion_con_configuracion_real_intenta_enviar(self, client, monkeypatch):
+        from cryptography.fernet import Fernet
+        from unittest.mock import patch, MagicMock
+        monkeypatch.setenv("SMTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        login(client)
+        client.post("/api/smtp_config", json={
+            "server": "smtp.ejemplo.com", "port": 587,
+            "username": "alertas@ejemplo.com", "password": "secreto123",
+        })
+
+        with patch("smtplib.SMTP") as mock_smtp_class:
+            mock_server = MagicMock()
+            mock_smtp_class.return_value.__enter__.return_value = mock_server
+            resp = client.post("/api/smtp_config/test", json={"test_recipient": "yo@x.com"})
+
+        assert resp.status_code == 200
+        mock_server.send_message.assert_called_once()
+
+
+class TestAlertRecipientsRoutes:
+    def test_listar_vacio_al_inicio(self, client):
+        login(client)
+        resp = client.get("/api/alert_recipients")
+        assert resp.status_code == 200
+        assert resp.get_json() == []
+
+    def test_agregar_y_listar_destinatario(self, client):
+        login(client)
+        resp = client.post("/api/alert_recipients", json={"email": "gerente@tienda.com"})
+        assert resp.status_code == 201
+        assert "gerente@tienda.com" in resp.get_json()
+
+    def test_agregar_sin_email_devuelve_400(self, client):
+        login(client)
+        resp = client.post("/api/alert_recipients", json={})
+        assert resp.status_code == 400
+
+    def test_eliminar_destinatario(self, client):
+        login(client)
+        client.post("/api/alert_recipients", json={"email": "temporal@tienda.com"})
+        resp = client.delete("/api/alert_recipients/temporal@tienda.com")
+        assert resp.status_code == 200
+        assert "temporal@tienda.com" not in resp.get_json()
+
+    def test_alert_recipients_sin_login_es_rechazado(self, client):
+        resp = client.get("/api/alert_recipients")
+        assert resp.status_code in (302, 401)
+
+
 class TestRoiZonesRoutes:
     def test_crear_y_listar_zona(self, client):
         login(client)
