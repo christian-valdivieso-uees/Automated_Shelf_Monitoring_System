@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     username       TEXT NOT NULL UNIQUE,
     password_hash  TEXT NOT NULL,
-    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at     DATETIME NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 -- ----------------------------------------------------------------------------
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     token        TEXT NOT NULL UNIQUE,
     expires_at   DATETIME NOT NULL,
     used         BOOLEAN NOT NULL DEFAULT 0,
-    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_reset_tokens_token ON password_reset_tokens(token);
@@ -66,8 +66,8 @@ CREATE TABLE IF NOT EXISTS roi_zones (
     candidate_consecutive_readings INTEGER NOT NULL DEFAULT 0,
 
     active                        BOOLEAN NOT NULL DEFAULT 1,
-    created_at                    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at                    DATETIME NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at                    DATETIME NOT NULL DEFAULT (datetime('now', 'localtime')),
 
     CHECK (x2 > x1 AND y2 > y1),
     CHECK (restocked_threshold > low_stock_threshold)
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS roi_readings (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     roi_id         INTEGER NOT NULL REFERENCES roi_zones(id) ON DELETE CASCADE,
     total_objects  INTEGER NOT NULL,
-    timestamp      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    timestamp      DATETIME NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_roi_readings_zone_time ON roi_readings(roi_id, timestamp DESC);
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS stock_events (
     avg_total_objects   REAL,
     image_path          TEXT,
     email_sent          BOOLEAN NOT NULL DEFAULT 0,
-    timestamp           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    timestamp           DATETIME NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 -- Índices para los filtros de la pantalla de Historial (RF-13, RF-14, RF-15)
@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS general_parameters (
     key           TEXT PRIMARY KEY,
     value         TEXT NOT NULL,
     description   TEXT,
-    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at    DATETIME NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 -- ----------------------------------------------------------------------------
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS smtp_config (
     encrypted_password  TEXT NOT NULL,
     use_tls             BOOLEAN NOT NULL DEFAULT 1,
     active              BOOLEAN NOT NULL DEFAULT 1,
-    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at          DATETIME NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 -- ----------------------------------------------------------------------------
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS alert_recipients (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     email        TEXT NOT NULL UNIQUE,
     active       BOOLEAN NOT NULL DEFAULT 1,
-    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 -- ============================================================================

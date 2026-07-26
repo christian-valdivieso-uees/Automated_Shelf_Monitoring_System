@@ -87,8 +87,8 @@ def save_smtp_config(conn: sqlite3.Connection, server: str, port: int, username:
     conn.execute("UPDATE smtp_config SET active = 0")
     cursor = conn.execute(
         """
-        INSERT INTO smtp_config (server, port, username, encrypted_password, use_tls, active)
-        VALUES (?, ?, ?, ?, ?, 1)
+        INSERT INTO smtp_config (server, port, username, encrypted_password, use_tls, active, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, datetime('now', 'localtime'))
         """,
         (server, port, username, encrypted_password, use_tls),
     )
@@ -106,7 +106,7 @@ def get_active_alert_recipient_emails(conn: sqlite3.Connection) -> list:
 
 def add_alert_recipient(conn: sqlite3.Connection, email: str) -> int:
     cursor = conn.execute(
-        "INSERT OR IGNORE INTO alert_recipients (email) VALUES (?)", (email,)
+        "INSERT OR IGNORE INTO alert_recipients (email, created_at) VALUES (?, datetime('now', 'localtime'))", (email,)
     )
     conn.commit()
     return cursor.lastrowid
@@ -125,7 +125,7 @@ def create_user(conn: sqlite3.Connection, username: str, password_hash: str) -> 
     """Crea un nuevo usuario. `password_hash` ya debe venir hasheado
     (werkzeug.security.generate_password_hash) — esta capa nunca hashea."""
     cursor = conn.execute(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, datetime('now', 'localtime'))",
         (username, password_hash),
     )
     conn.commit()
@@ -199,8 +199,9 @@ def create_roi_zone(conn: sqlite3.Connection, name: str, x1: float, y1: float,
     cursor = conn.execute(
         """
         INSERT INTO roi_zones
-            (name, x1, y1, x2, y2, low_stock_threshold, restocked_threshold, confirmation_readings)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (name, x1, y1, x2, y2, low_stock_threshold, restocked_threshold, confirmation_readings,
+             created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
         """,
         (name, x1, y1, x2, y2, low_stock_threshold, restocked_threshold, confirmation_readings),
     )
@@ -220,7 +221,7 @@ def update_roi_state(conn: sqlite3.Connection, roi_id: int, current_state: str,
         SET current_state = ?,
             candidate_state = ?,
             candidate_consecutive_readings = ?,
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = datetime('now', 'localtime')
         WHERE id = ?
         """,
         (current_state, candidate_state, candidate_consecutive_readings, roi_id),
@@ -248,7 +249,7 @@ def update_roi_zone(conn: sqlite3.Connection, roi_id: int, name: str = None,
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     params = list(updates.values()) + [roi_id]
     conn.execute(
-        f"UPDATE roi_zones SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        f"UPDATE roi_zones SET {set_clause}, updated_at = datetime('now', 'localtime') WHERE id = ?",
         params,
     )
     conn.commit()
@@ -267,7 +268,7 @@ def delete_roi_zone(conn: sqlite3.Connection, roi_id: int) -> None:
 
 def insert_reading(conn: sqlite3.Connection, roi_id: int, total_objects: int) -> int:
     cursor = conn.execute(
-        "INSERT INTO roi_readings (roi_id, total_objects) VALUES (?, ?)",
+        "INSERT INTO roi_readings (roi_id, total_objects, timestamp) VALUES (?, ?, datetime('now', 'localtime'))",
         (roi_id, total_objects),
     )
     conn.commit()
@@ -326,8 +327,8 @@ def insert_stock_event(conn: sqlite3.Connection, roi_id: Optional[int], roi_name
     cursor = conn.execute(
         """
         INSERT INTO stock_events
-            (roi_id, roi_name_snapshot, previous_state, new_state, avg_total_objects, image_path)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (roi_id, roi_name_snapshot, previous_state, new_state, avg_total_objects, image_path, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
         """,
         (roi_id, roi_name_snapshot, previous_state, new_state, avg_total_objects, image_path),
     )
@@ -397,10 +398,10 @@ def set_general_parameter(conn: sqlite3.Connection, key: str, value, description
     conn.execute(
         """
         INSERT INTO general_parameters (key, value, description, updated_at)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, datetime('now', 'localtime'))
         ON CONFLICT(key) DO UPDATE SET
             value = excluded.value,
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = datetime('now', 'localtime')
         """,
         (key, str(value), description),
     )
