@@ -4,9 +4,14 @@
 
 {% block content %}
 <div class="grid" style="grid-template-columns: 2fr 1fr; align-items: start;">
-  <div class="video-wrap" id="videoWrap">
-    <div class="video-placeholder" id="videoPlaceholder">Esperando señal de la cámara…</div>
-    <img src="{{ url_for('video_feed') }}" alt="Transmisión en vivo de la cámara" id="videoImg">
+  <div>
+    <div class="video-wrap" id="videoWrap">
+      <div class="video-placeholder" id="videoPlaceholder">Esperando señal de la cámara…</div>
+      <img src="{{ url_for('video_feed') }}" alt="Transmisión en vivo de la cámara" id="videoImg">
+    </div>
+    <div id="cameraStatusBanner" style="display:none; margin-top: 10px;">
+      <span class="badge badge-out_of_stock">● Cámara no disponible</span>
+    </div>
   </div>
 
   <div>
@@ -23,12 +28,21 @@
 <script>
   const ESTADO_LABEL = { in_stock: 'Con stock', out_of_stock: 'Sin stock' };
 
-  function renderZoneCard(zone) {
+  function renderZoneCard(zone, cameraAvailable) {
     const state = zone.current_state || 'in_stock';
     const count = zone.latest_count;
-    const countDisplay = (count !== null && count !== undefined)
-      ? `${count}<span class="unit">botellas</span>`
-      : `<span style="font-size:15px; color: var(--text-tertiary); font-weight:400;">Sin lecturas aún</span>`;
+
+    let countDisplay;
+    if (!cameraAvailable) {
+      // Cámara desconectada/no disponible: el conteo se muestra en 0,
+      // nunca se arrastra el último valor conocido (sería engañoso).
+      countDisplay = `0<span class="unit">botellas</span>`;
+    } else if (count !== null && count !== undefined) {
+      countDisplay = `${count}<span class="unit">botellas</span>`;
+    } else {
+      countDisplay = `<span style="font-size:15px; color: var(--text-tertiary); font-weight:400;">Sin lecturas aún</span>`;
+    }
+
     return `
       <div class="shelf-tag state-${state}">
         <span class="tag-name">${zone.name}</span>
@@ -41,12 +55,36 @@
     `;
   }
 
-  async function refreshZones() {
+  function updateCameraUi(available) {
+    const placeholder = document.getElementById('videoPlaceholder');
+    const banner = document.getElementById('cameraStatusBanner');
+
+    if (available) {
+      placeholder.style.display = 'none';
+      banner.style.display = 'none';
+    } else {
+      placeholder.textContent = 'Cámara no disponible';
+      placeholder.style.display = 'flex';
+      banner.style.display = 'block';
+    }
+  }
+
+  async function refreshAll() {
     const container = document.getElementById('zoneCards');
     try {
-      const resp = await fetch('/api/roi_zones');
-      if (resp.status === 401) { window.location.href = '/login'; return; }
-      const zones = await resp.json();
+      const [statusResp, zonesResp] = await Promise.all([
+        fetch('/api/camera_status'),
+        fetch('/api/roi_zones'),
+      ]);
+      if (statusResp.status === 401 || zonesResp.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
+
+      const status = await statusResp.json();
+      const zones = await zonesResp.json();
+
+      updateCameraUi(status.available);
 
       if (!zones.length) {
         container.innerHTML = `
@@ -56,19 +94,13 @@
           </div>`;
         return;
       }
-      container.innerHTML = zones.map(renderZoneCard).join('');
+      container.innerHTML = zones.map((z) => renderZoneCard(z, status.available)).join('');
     } catch (err) {
       container.innerHTML = `<div class="empty-state">No se pudo conectar con el sistema.</div>`;
     }
   }
 
-  refreshZones();
-  setInterval(refreshZones, 2000);
-
-  // El placeholder se oculta en cuanto el <img> del stream MJPEG recibe
-  // datos reales por primera vez (evento 'load' del navegador).
-  document.getElementById('videoImg').addEventListener('load', () => {
-    document.getElementById('videoPlaceholder').style.display = 'none';
-  });
+  refreshAll();
+  setInterval(refreshAll, 2000);
 </script>
 {% endblock %}

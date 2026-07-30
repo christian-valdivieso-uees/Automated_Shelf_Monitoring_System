@@ -79,6 +79,20 @@ login_manager.login_view = "login"
 _latest_frame_lock = threading.Lock()
 _latest_frame_jpeg = None  # bytes JPEG ya codificados, listos para streaming
 
+_camera_status_lock = threading.Lock()
+_camera_available = False  # arranca en False: nadie ha confirmado un frame real todavía
+
+
+def _set_camera_available(value: bool) -> None:
+    global _camera_available
+    with _camera_status_lock:
+        _camera_available = value
+
+
+def _is_camera_available() -> bool:
+    with _camera_status_lock:
+        return _camera_available
+
 
 # ----------------------------------------------------------------------------
 # Flask-Login
@@ -187,15 +201,32 @@ def video_feed():
 # RF-08 a RF-11: Configuración de Zonas ROI
 # ----------------------------------------------------------------------------
 
+@app.route("/api/camera_status", methods=["GET"])
+@login_required
+def camera_status_route():
+    """
+    Estado de disponibilidad de la cámara, para que el frontend muestre
+    'Cámara no disponible' y fuerce el conteo a nulo en vez de arrastrar
+    el último valor conocido (potencialmente engañoso tras una desconexión).
+    """
+    return jsonify({"available": _is_camera_available()})
+
+
 @app.route("/api/roi_zones", methods=["GET"])
 @login_required
 def list_roi_zones():
     conn = db.get_connection()
     try:
         zones = db.get_active_roi_zones(conn)
+        camera_ok = _is_camera_available()
         for zone in zones:
-            recent = db.get_recent_total_objects(conn, zone["id"], window=1)
-            zone["latest_count"] = recent[0] if recent else None
+            if camera_ok:
+                recent = db.get_recent_total_objects(conn, zone["id"], window=1)
+                zone["latest_count"] = recent[0] if recent else None
+            else:
+                # Sin cámara disponible, no se arrastra el último conteo
+                # conocido: sería información obsoleta y engañosa.
+                zone["latest_count"] = None
     finally:
         conn.close()
     return jsonify(zones)
@@ -668,6 +699,33 @@ def _dispatch_alert_email(conn, event_id: int, roi_row: dict, transition,
     )
 
 
+CAMERA_RETRY_SECONDS = 5  # espera entre reintentos si la cámara no está lista/disponible
+
+
+def _init_camera_and_model():
+    """
+    Intenta cargar el modelo y arrancar la cámara. Reintenta indefinidamente
+    cada CAMERA_RETRY_SECONDS si falla (ej. cámara desconectada físicamente,
+    o modelo aún no copiado a MODEL_PATH) — nunca deja morir el hilo por un
+    fallo de arranque, y mantiene _camera_available en False mientras tanto.
+    """
+    while True:
+        try:
+            model = YOLO(MODEL_PATH)
+            picam2 = Picamera2()
+            config = picam2.create_preview_configuration(
+                main={"size": (FRAME_WIDTH, FRAME_HEIGHT), "format": "RGB888"}
+            )
+            picam2.configure(config)
+            picam2.start()
+            time.sleep(2)  # deja que ajuste exposición
+            return model, picam2
+        except Exception as exc:
+            print(f"[CAMARA] No se pudo inicializar (reintentando en {CAMERA_RETRY_SECONDS}s): {exc}")
+            _set_camera_available(False)
+            time.sleep(CAMERA_RETRY_SECONDS)
+
+
 def camera_loop():
     """Hilo único que posee la cámara y ejecuta el ciclo de inferencia."""
     global _latest_frame_jpeg
@@ -675,22 +733,32 @@ def camera_loop():
     if not HARDWARE_AVAILABLE:
         print("ADVERTENCIA: picamera2/ultralytics no disponibles. "
               "camera_loop() no puede ejecutarse en este entorno.")
+        _set_camera_available(False)
         return
 
-    model = YOLO(MODEL_PATH)
-    picam2 = Picamera2()
-    config = picam2.create_preview_configuration(
-        main={"size": (FRAME_WIDTH, FRAME_HEIGHT), "format": "RGB888"}
-    )
-    picam2.configure(config)
-    picam2.start()
-    time.sleep(2)  # deja que ajuste exposición
+    model, picam2 = _init_camera_and_model()
 
     try:
         while True:
-            frame = picam2.capture_array()
-            results = model(frame)
-            annotated = results[0].plot()
+            try:
+                frame = picam2.capture_array()
+                results = model(frame)
+                annotated = results[0].plot()
+            except Exception as exc:
+                # Cubre tanto una desconexión física a mitad de operación
+                # (ribbon de la CSI, cámara removida) como cualquier fallo
+                # transitorio de captura/inferencia. No se mata el hilo: se
+                # marca la cámara como no disponible, se limpia el último
+                # frame (para que /video_feed deje de mostrar algo obsoleto),
+                # y se reintenta en el siguiente ciclo.
+                print(f"[CAMARA] Error de captura/inferencia: {exc}")
+                _set_camera_available(False)
+                with _latest_frame_lock:
+                    _latest_frame_jpeg = None
+                time.sleep(CAMERA_RETRY_SECONDS)
+                continue
+
+            _set_camera_available(True)
 
             boxes = [
                 BoundingBox(x1=float(b[0]), y1=float(b[1]), x2=float(b[2]), y2=float(b[3]))

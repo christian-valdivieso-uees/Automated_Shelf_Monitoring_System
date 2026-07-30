@@ -139,6 +139,57 @@ class TestPaginasHtml:
         assert resp.status_code == 302
 
 
+class TestCameraStatusRoute:
+    def test_camera_status_por_defecto_no_disponible(self, client, backend):
+        login(client)
+        # backend arranca con _camera_available = False por defecto
+        resp = client.get("/api/camera_status")
+        assert resp.status_code == 200
+        assert resp.get_json() == {"available": False}
+
+    def test_camera_status_refleja_disponible_cuando_se_marca(self, client, backend):
+        login(client)
+        backend._set_camera_available(True)
+        resp = client.get("/api/camera_status")
+        assert resp.get_json() == {"available": True}
+        backend._set_camera_available(False)  # limpieza
+
+    def test_camera_status_sin_login_es_rechazado(self, client):
+        resp = client.get("/api/camera_status")
+        assert resp.status_code in (302, 401)
+
+    def test_roi_zones_no_arrastra_conteo_viejo_si_camara_no_disponible(self, client, backend):
+        login(client)
+        zona = client.post("/api/roi_zones", json={
+            "name": "Zona Cam", "x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0,
+        }).get_json()
+
+        conn = backend.db.get_connection()
+        backend.db.insert_reading(conn, zona["id"], 7)  # lectura real ya guardada
+        conn.close()
+
+        backend._set_camera_available(False)
+        zonas = client.get("/api/roi_zones").get_json()
+        encontrada = next(z for z in zonas if z["id"] == zona["id"])
+        assert encontrada["latest_count"] is None
+
+    def test_roi_zones_muestra_conteo_real_si_camara_disponible(self, client, backend):
+        login(client)
+        zona = client.post("/api/roi_zones", json={
+            "name": "Zona Cam2", "x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0,
+        }).get_json()
+
+        conn = backend.db.get_connection()
+        backend.db.insert_reading(conn, zona["id"], 5)
+        conn.close()
+
+        backend._set_camera_available(True)
+        zonas = client.get("/api/roi_zones").get_json()
+        encontrada = next(z for z in zonas if z["id"] == zona["id"])
+        assert encontrada["latest_count"] == 5
+        backend._set_camera_available(False)  # limpieza
+
+
 class TestSettingsPage:
     def test_settings_page_renderiza_tras_login(self, client):
         login(client)
