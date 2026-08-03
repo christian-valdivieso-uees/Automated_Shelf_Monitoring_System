@@ -41,6 +41,40 @@ Un solo proceso Flask posee la cámara (hilo `camera_loop` en background) y expo
 <img src="docs/deployment.png" width="600" alt="Vista de despliegue">
 <img src="docs/components.png" width="600" alt="Vista de componentes">
 
+## Instrucciones de uso
+
+1. Acceder con usuario y contraseña
+
+<img src="docs/login.png" width="600" alt="Vista de login">
+
+2. Vista en vivo y conteo en tiempo real
+
+<img src="docs/live_view.png" width="600" alt="Vista en vivo">
+
+3. Configuración de zonas
+
+<img src="docs/roi_config.png" width="600" alt="Configuración de zonas">
+
+4. Historial de eventos
+
+<img src="docs/history.png" width="600" alt="Historial de eventos">
+
+5. Configuración de alertas
+
+<img src="docs/alerts_config.png" width="600" alt="Configuración de alertas">
+
+6. Configuración SMTP
+
+<img src="docs/smtp_config.png" width="600" alt="Configuración SMTP">
+
+7. Configuración envio de alertas
+
+<img src="docs/alerts_send.png" width="600" alt="Configuración envio de alertas">
+
+8. Configuración de usuarios
+
+<img src="docs/users_config.png" width="600" alt="Configuración de usuarios">
+
 ## Estructura del repositorio
 
 ```
@@ -57,7 +91,7 @@ Un solo proceso Flask posee la cámara (hilo `camera_loop` en background) y expo
 ├── data/
 │   └── schema.sql             # Esquema SQLite (tablas, índices, seeds)
 ├── tests/                    # 105 pruebas (pytest), 100% cobertura en app/
-├── docs/                     # Diagramas de arquitectura, documentos del curso
+├── docs/                     # Diagramas de arquitectura, documentos del curso, capturas de pantalla del sistema
 ├── init_db.py                 # Script de inicialización (usuario admin, esquema, seeds)
 └── requirements.txt
 ```
